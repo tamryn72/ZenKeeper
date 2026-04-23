@@ -367,10 +367,39 @@ function saveState(s) {
 }
 
 // ── STARS ─────────────────────────────────────────────────────────────────────
-const STARS = Array.from({length:100},(_,i)=>({
-  x: Math.random()*100, y: Math.random()*100,
-  s: Math.random()*1.8+0.5, o: Math.random()*0.5+0.15,
-  d: Math.random()*4+2
+// Three tiers: fine dust, regular twinkle, rare "jewel" stars with colored flare.
+const STAR_TINTS = ["#FFFFFF","#FFFFFF","#FFFFFF","#CFE6FF","#FFE8C8","#E8D8FF"];
+const STARS = Array.from({length:180},(_,i)=>{
+  const tier = Math.random();
+  const jewel = tier > 0.94;
+  const big = !jewel && tier > 0.78;
+  return {
+    x: Math.random()*100, y: Math.random()*100,
+    s: jewel ? Math.random()*1.2+1.8 : big ? Math.random()*1.1+1.1 : Math.random()*0.9+0.3,
+    o: jewel ? Math.random()*0.3+0.6 : big ? Math.random()*0.4+0.35 : Math.random()*0.35+0.1,
+    d: Math.random()*5+2.5,
+    delay: Math.random()*6,
+    tint: jewel ? STAR_TINTS[Math.floor(Math.random()*STAR_TINTS.length)] : "#FFFFFF",
+    jewel,
+  };
+});
+
+// Drifting nebula blobs — slow translate + opacity breathing.
+const NEBULAE = [
+  { x: 15, y: 20, size: 520, hue: "violet", dur: 46, delay: 0,  drift: 18 },
+  { x: 78, y: 30, size: 440, hue: "accent", dur: 58, delay: 8,  drift: 22 },
+  { x: 35, y: 75, size: 600, hue: "indigo", dur: 64, delay: 14, drift: 26 },
+  { x: 85, y: 82, size: 380, hue: "accent", dur: 52, delay: 22, drift: 16 },
+  { x: 50, y: 45, size: 700, hue: "deep",   dur: 72, delay: 4,  drift: 10 },
+];
+
+// Shooting stars — staggered so one crosses every few seconds.
+const SHOOTERS = Array.from({length:6},(_,i)=>({
+  top: 5 + Math.random()*40,
+  left: -10 - Math.random()*20,
+  dur: 2.4 + Math.random()*1.6,
+  delay: i * 7 + Math.random()*4,
+  len: 90 + Math.random()*80,
 }));
 
 // ── ARCHON CAROUSEL ───────────────────────────────────────────────────────────
@@ -623,14 +652,82 @@ export default function ZenKeeper() {
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div style={{minHeight:"100vh",background:"#03040a",fontFamily:"'Palatino Linotype','Book Antiqua',Palatino,serif",color:"#E8E0FF",position:"relative",overflow:"hidden"}}>
-      {/* Stars */}
+      {/* ── COSMIC BACKGROUND ───────────────────────────────────────────────── */}
+      {/* Base deep-space gradient */}
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,
+        background:"radial-gradient(ellipse at 50% 0%, #0a0720 0%, #05051a 38%, #020308 75%, #000004 100%)"
+      }}/>
+
+      {/* Slowly rotating aurora wisp */}
+      <div style={{position:"fixed",inset:"-25%",pointerEvents:"none",zIndex:0,opacity:0.35,
+        background:`conic-gradient(from 0deg at 50% 55%, transparent 0deg, ${orb.glow}22 60deg, transparent 120deg, ${orb.color}18 200deg, transparent 260deg, ${orb.glow}22 320deg, transparent 360deg)`,
+        filter:"blur(80px)",
+        animation:"auroraSpin 90s linear infinite"
+      }}/>
+
+      {/* Drifting nebulae — each breathes + translates on its own cycle */}
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+        {NEBULAE.map((n,i)=>{
+          const tint = n.hue==="accent" ? orb.color : n.hue==="violet" ? "#8A5CFF" : n.hue==="indigo" ? "#4464C8" : "#2A1A5A";
+          return (
+            <div key={i} style={{
+              position:"absolute",
+              left:`${n.x}%`, top:`${n.y}%`,
+              width:n.size, height:n.size,
+              marginLeft:-n.size/2, marginTop:-n.size/2,
+              borderRadius:"50%",
+              background:`radial-gradient(circle, ${tint}44 0%, ${tint}22 35%, transparent 70%)`,
+              filter:"blur(60px)",
+              mixBlendMode:"screen",
+              animation:`nebDrift${i} ${n.dur}s ease-in-out ${n.delay}s infinite, nebBreathe ${n.dur*0.6}s ease-in-out ${n.delay}s infinite`
+            }}/>
+          );
+        })}
+      </div>
+
+      {/* Stars — twinkling, with occasional colored jewel stars */}
       <svg style={{position:"fixed",inset:0,width:"100%",height:"100%",pointerEvents:"none",zIndex:0}} preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <radialGradient id="jewelGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="white" stopOpacity="1"/>
+            <stop offset="40%" stopColor="white" stopOpacity="0.6"/>
+            <stop offset="100%" stopColor="white" stopOpacity="0"/>
+          </radialGradient>
+        </defs>
         {STARS.map((s,i)=>(
-          <circle key={i} cx={`${s.x}%`} cy={`${s.y}%`} r={s.s} fill="white" opacity={s.o}>
-            <animate attributeName="opacity" values={`${s.o};${Math.min(s.o+0.3,0.9)};${s.o}`} dur={`${s.d}s`} repeatCount="indefinite"/>
-          </circle>
+          s.jewel ? (
+            <g key={i}>
+              <circle cx={`${s.x}%`} cy={`${s.y}%`} r={s.s*3} fill="url(#jewelGlow)" opacity={s.o*0.5}>
+                <animate attributeName="opacity" values={`${s.o*0.3};${s.o*0.7};${s.o*0.3}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+              </circle>
+              <circle cx={`${s.x}%`} cy={`${s.y}%`} r={s.s} fill={s.tint} opacity={s.o}>
+                <animate attributeName="opacity" values={`${s.o};${Math.min(s.o+0.35,1)};${s.o}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+              </circle>
+            </g>
+          ) : (
+            <circle key={i} cx={`${s.x}%`} cy={`${s.y}%`} r={s.s} fill={s.tint} opacity={s.o}>
+              <animate attributeName="opacity" values={`${s.o};${Math.min(s.o+0.35,0.95)};${s.o}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+            </circle>
+          )
         ))}
       </svg>
+
+      {/* Shooting stars — diagonal streaks that cross the sky periodically */}
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+        {SHOOTERS.map((sh,i)=>(
+          <div key={i} style={{
+            position:"absolute",
+            top:`${sh.top}%`, left:`${sh.left}%`,
+            width:sh.len, height:1.5,
+            background:"linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.9) 60%, #FFFFFF 100%)",
+            borderRadius:2,
+            opacity:0,
+            transform:"rotate(18deg)",
+            filter:"drop-shadow(0 0 6px rgba(200,220,255,0.9))",
+            animation:`shoot ${sh.dur}s ease-in ${sh.delay}s infinite`
+          }}/>
+        ))}
+      </div>
 
       <div style={{position:"relative",zIndex:1,maxWidth:480,margin:"0 auto",padding:"0 0 80px"}}>
 
@@ -899,6 +996,43 @@ export default function ZenKeeper() {
         @keyframes orbPulse {
           0%,100%{opacity:0.6;transform:scale(1)}
           50%{opacity:1;transform:scale(1.06)}
+        }
+        @keyframes auroraSpin {
+          0%{transform:rotate(0deg)}
+          100%{transform:rotate(360deg)}
+        }
+        @keyframes nebBreathe {
+          0%,100%{opacity:0.55}
+          50%{opacity:1}
+        }
+        @keyframes nebDrift0 {
+          0%,100%{transform:translate(0,0) scale(1)}
+          50%{transform:translate(40px,-30px) scale(1.08)}
+        }
+        @keyframes nebDrift1 {
+          0%,100%{transform:translate(0,0) scale(1)}
+          50%{transform:translate(-50px,25px) scale(1.12)}
+        }
+        @keyframes nebDrift2 {
+          0%,100%{transform:translate(0,0) scale(1)}
+          50%{transform:translate(30px,40px) scale(0.94)}
+        }
+        @keyframes nebDrift3 {
+          0%,100%{transform:translate(0,0) scale(1)}
+          50%{transform:translate(-35px,-20px) scale(1.06)}
+        }
+        @keyframes nebDrift4 {
+          0%,100%{transform:translate(0,0) scale(1)}
+          50%{transform:translate(20px,-40px) scale(1.04)}
+        }
+        @keyframes shoot {
+          0%{opacity:0;transform:translate(0,0) rotate(18deg)}
+          6%{opacity:1}
+          70%{opacity:1}
+          100%{opacity:0;transform:translate(130vw,42vh) rotate(18deg)}
+        }
+        @media (prefers-reduced-motion: reduce) {
+          *{animation-duration:0.001s !important;animation-iteration-count:1 !important}
         }
         button:focus{outline:none}
         textarea:focus{border-color:rgba(180,140,255,0.4)!important}
