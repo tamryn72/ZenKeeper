@@ -6,4 +6,10 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   base: process.env.VITE_BASE ?? "/ZenKeeper/",
+  build: {
+    // Broad mobile compatibility. Vite's default "modules" target can emit
+    // syntax (class private fields, top-level await, etc.) that older Android
+    // WebView / Samsung Internet fail to parse — resulting in a blank dark page.
+    target: ["es2018", "chrome70", "safari13"],
+  },
 });
