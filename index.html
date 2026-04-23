@@ -4,59 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0014" />
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
     <meta name="description" content="Zen Keeper: Sophia's Light — a Gnostic-themed meditation trainer and awareness tracker." />
     <title>Zen Keeper: Sophia's Light</title>
     <style>
       html, body, #root { margin: 0; padding: 0; min-height: 100%; background: #0a0014; }
       body { font-family: 'Palatino Linotype','Book Antiqua',Palatino,serif; color: #e8e0ff; -webkit-font-smoothing: antialiased; }
-      #fallback {
-        position: fixed; inset: 0; display: flex; flex-direction: column;
-        align-items: center; justify-content: center; padding: 24px;
-        text-align: center; z-index: 1;
-      }
-      #fallback .title { font-size: 22px; letter-spacing: 3px; color: #E8D8FF; margin-bottom: 8px; }
-      #fallback .sub { font-size: 11px; letter-spacing: 3px; color: #6A5A8A; text-transform: uppercase; margin-bottom: 24px; }
-      #fallback .dots { display: flex; gap: 6px; margin-bottom: 24px; }
-      #fallback .dots i { width: 6px; height: 6px; border-radius: 50%; background: #AA88FF; opacity: 0.3; animation: pulse 1.4s ease-in-out infinite; }
-      #fallback .dots i:nth-child(2) { animation-delay: 0.2s; }
-      #fallback .dots i:nth-child(3) { animation-delay: 0.4s; }
-      @keyframes pulse { 0%,100%{opacity:0.3;transform:scale(1);} 50%{opacity:1;transform:scale(1.4);} }
-      #err { display: none; max-width: 340px; background: rgba(255,136,85,0.08); border: 1px solid rgba(255,136,85,0.3); border-radius: 12px; padding: 16px; color: #FFB896; font-size: 12px; line-height: 1.6; font-family: monospace; word-break: break-word; }
-      #err.on { display: block; }
-      #err b { color: #FFD7BF; letter-spacing: 2px; text-transform: uppercase; font-size: 10px; }
     </style>
   </head>
   <body>
-    <!-- Fallback so the page is never a silent dark void: shows a loading state
-         or, if the bundle fails to parse/run, the actual error message. React
-         removes this node on successful mount. -->
-    <div id="fallback">
-      <div class="title">Zen Keeper</div>
-      <div class="sub">Summoning…</div>
-      <div class="dots"><i></i><i></i><i></i></div>
-      <div id="err"><b>Something went wrong</b><br/><span id="err-msg"></span></div>
-    </div>
     <div id="root"></div>
-    <script>
-      // Catch any script error that happens before React mounts and show it.
-      window.addEventListener('error', function (e) {
-        var el = document.getElementById('err');
-        var msg = document.getElementById('err-msg');
-        if (el && msg) { msg.textContent = (e && e.message) || 'Unknown error'; el.classList.add('on'); }
-      });
-      // If nothing mounts within 6s, surface that too.
-      setTimeout(function () {
-        var root = document.getElementById('root');
-        if (root && root.childElementCount === 0) {
-          var el = document.getElementById('err');
-          var msg = document.getElementById('err-msg');
-          if (el && msg) { msg.textContent = 'The app did not start. Your browser may be too old to run this bundle.'; el.classList.add('on'); }
-        }
-      }, 6000);
-    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
