@@ -309,17 +309,12 @@ const ARCHONS = [
 // Classic ladder kept as a fallback preset; live sessions use `settings` below.
 const ROUNDS = [10,20,30,45,60,90,120];
 
-// Selectable round lengths (seconds) shown on the Home screen.
-const LENGTH_PRESETS = [
-  { label:"1m",  value:60   },
-  { label:"2m",  value:120  },
-  { label:"5m",  value:300  },
-  { label:"10m", value:600  },
-  { label:"15m", value:900  },
-  { label:"20m", value:1200 },
-  { label:"30m", value:1800 },
-];
-const COUNT_PRESETS = [1, 2, 3, 5, 7, 10];
+// Shortcut chips shown below the duration dial.
+const DURATION_SHORTCUTS = [60, 300, 600, 1200, 1800, 3600];
+
+// Sit duration range for the dial (seconds).
+const DUR_MIN = 20;
+const DUR_MAX = 3600; // 60 minutes
 
 const AMBIENCE_PRESETS = [
   { id:"silence", label:"Silence"      },
@@ -328,7 +323,7 @@ const AMBIENCE_PRESETS = [
   { id:"day",     label:"Nature Day"   },
 ];
 
-const DEFAULT_SETTINGS = { length:60, count:3, ambience:"silence" };
+const DEFAULT_SETTINGS = { duration: 300, ambience: "silence" };
 
 // ── ORB LEVELS ────────────────────────────────────────────────────────────────
 // Thresholds intentionally steep — leveling is a ceremony, not a tick.
@@ -355,6 +350,92 @@ function formatSeconds(s) {
   if (s < 60) return `${s}s`;
   const m = Math.floor(s/60), rem = s%60;
   return rem ? `${m}m ${rem}s` : `${m}m`;
+}
+
+function formatClock(s) {
+  const m = Math.floor(s/60), sec = Math.floor(s%60);
+  return `${m}:${sec.toString().padStart(2,"0")}`;
+}
+
+// Dial math — 300° arc from -150° to +150°, log-scaled so short sits get
+// fine granularity and long sits jump in bigger steps.
+const DIAL_SWEEP = 300;
+const DIAL_START = -DIAL_SWEEP / 2;
+function durToRatio(d) {
+  const r = (Math.log(d) - Math.log(DUR_MIN)) / (Math.log(DUR_MAX) - Math.log(DUR_MIN));
+  return Math.max(0, Math.min(1, r));
+}
+function ratioToDur(r) {
+  const raw = Math.exp(Math.log(DUR_MIN) + r * (Math.log(DUR_MAX) - Math.log(DUR_MIN)));
+  let snapped;
+  if (raw < 60)       snapped = Math.round(raw / 5)  * 5;
+  else if (raw < 300) snapped = Math.round(raw / 10) * 10;
+  else if (raw < 900) snapped = Math.round(raw / 30) * 30;
+  else                snapped = Math.round(raw / 60) * 60;
+  return Math.max(DUR_MIN, Math.min(DUR_MAX, snapped));
+}
+function polarToCart(cx, cy, r, angleDeg) {
+  const a = (angleDeg - 90) * Math.PI / 180;
+  return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+}
+
+function DurationDial({ value, onChange, color, glow }) {
+  const ref = useRef(null);
+  const draggingRef = useRef(false);
+
+  const ratio = durToRatio(value);
+  const angle = DIAL_START + DIAL_SWEEP * ratio;
+  const size = 240, R = 100, cx = size/2, cy = size/2;
+  const startPt = polarToCart(cx, cy, R, DIAL_START);
+  const endPt   = polarToCart(cx, cy, R, DIAL_START + DIAL_SWEEP);
+  const fillEnd = polarToCart(cx, cy, R, angle);
+  const bgLarge   = DIAL_SWEEP > 180 ? 1 : 0;
+  const fillLarge = DIAL_SWEEP * ratio > 180 ? 1 : 0;
+  const bgPath   = `M ${startPt.x} ${startPt.y} A ${R} ${R} 0 ${bgLarge} 1 ${endPt.x} ${endPt.y}`;
+  const fillPath = `M ${startPt.x} ${startPt.y} A ${R} ${R} 0 ${fillLarge} 1 ${fillEnd.x} ${fillEnd.y}`;
+  const knobPt = polarToCart(cx, cy, R, angle);
+
+  function updateFromPointer(e) {
+    const rect = ref.current.getBoundingClientRect();
+    const px = e.clientX - (rect.left + rect.width / 2);
+    const py = e.clientY - (rect.top + rect.height / 2);
+    let a = Math.atan2(px, -py) * 180 / Math.PI;
+    if (a < DIAL_START) a = DIAL_START;
+    if (a > DIAL_START + DIAL_SWEEP) a = DIAL_START + DIAL_SWEEP;
+    const r = (a - DIAL_START) / DIAL_SWEEP;
+    onChange(ratioToDur(r));
+  }
+  function onDown(e) {
+    draggingRef.current = true;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch(err) {}
+    updateFromPointer(e);
+  }
+  function onMove(e) { if (draggingRef.current) updateFromPointer(e); }
+  function onUp() { draggingRef.current = false; }
+
+  return (
+    <div ref={ref}
+      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+      style={{width:size,height:size,position:"relative",touchAction:"none",userSelect:"none",cursor:"grab"}}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <path d={bgPath}   fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" strokeLinecap="round"/>
+        <path d={fillPath} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
+          style={{filter:`drop-shadow(0 0 8px ${glow})`}}/>
+        {DURATION_SHORTCUTS.map((d,i)=>{
+          const ta = DIAL_START + DIAL_SWEEP * durToRatio(d);
+          const p1 = polarToCart(cx, cy, R - 10, ta);
+          const p2 = polarToCart(cx, cy, R - 2,  ta);
+          return <line key={i} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="rgba(180,140,255,0.25)" strokeWidth="1.2"/>;
+        })}
+        <circle cx={knobPt.x} cy={knobPt.y} r="13" fill={color} style={{filter:`drop-shadow(0 0 12px ${glow})`}}/>
+        <circle cx={knobPt.x} cy={knobPt.y} r="5"  fill="white" opacity="0.85"/>
+      </svg>
+      <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",pointerEvents:"none"}}>
+        <div style={{fontSize:42,color,letterSpacing:2,textShadow:`0 0 24px ${glow}`,fontVariantNumeric:"tabular-nums"}}>{formatClock(value)}</div>
+        <div style={{fontSize:9,color:"#6A5A8A",letterSpacing:3,textTransform:"uppercase",marginTop:6}}>drag to adjust</div>
+      </div>
+    </div>
+  );
 }
 
 // ── TEACHER MESSAGES ──────────────────────────────────────────────────────────
@@ -748,23 +829,23 @@ function ceremonyTone() {
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ZenKeeper() {
   const [store, setStore] = useState(() => loadState());
-  const [screen, setScreen] = useState("home"); // home | session | post | ceremony | archons | journal | addDownload
-  const [roundIdx, setRoundIdx] = useState(0);
-  const [sessionLog, setSessionLog] = useState([]);
+  const [screen, setScreen] = useState("home"); // home | setup | sit | post | ceremony | archons | journal | addDownload
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
-  const [showArchonPick, setShowArchonPick] = useState(false);
-  const [roundMsg, setRoundMsg] = useState("");
+  const [sitDuration, setSitDuration] = useState(0);
+  const [caughtArchons, setCaughtArchons] = useState([]);
+  const [sitInsights, setSitInsights] = useState([]);
+  const [pauseMode, setPauseMode] = useState(null); // null | "archon" | "insight"
+  const [insightDraft, setInsightDraft] = useState("");
   const [downloadText, setDownloadText] = useState("");
   const [orbPulse, setOrbPulse] = useState(false);
-  const [sessionLight, setSessionLight] = useState(0);
-  const [ceremony, setCeremony] = useState(null); // { from, to } when a level-up happens
+  const [sitLight, setSitLight] = useState(0);
+  const [ceremony, setCeremony] = useState(null); // { from, to } on level-up
   const timerRef = useRef(null);
   const audioCtxRef = useRef(null);
   const ambienceStopRef = useRef(null);
 
   const settings = store.settings || DEFAULT_SETTINGS;
-  const effectiveRounds = Array.from({length: settings.count}, () => settings.length);
   const orb = getOrbLevel(store.totalLight);
 
   // nemesis
@@ -773,19 +854,21 @@ export default function ZenKeeper() {
 
   function persist(newStore) { setStore(newStore); saveState(newStore); }
 
-  // ── Timer
+  // ── Timer — pauseMode halts countdown so mid-sit tagging/insight capture
+  //    doesn't eat real sit-time. Bell dings only when the full chosen
+  //    duration has elapsed.
   useEffect(()=>{
-    if (timerActive && timeLeft > 0) {
+    if (timerActive && !pauseMode && timeLeft > 0) {
       timerRef.current = setTimeout(()=>setTimeLeft(t=>t-1), 1000);
     } else if (timerActive && timeLeft === 0) {
       setTimerActive(false);
       dingSound();
       setOrbPulse(true);
-      setTimeout(()=>setOrbPulse(false), 1200);
-      setShowArchonPick(true);
+      setTimeout(()=>setOrbPulse(false), 1500);
+      endSit(false);
     }
     return ()=>clearTimeout(timerRef.current);
-  },[timerActive, timeLeft]);
+  },[timerActive, timeLeft, pauseMode]);
 
   function dingSound() {
     try {
@@ -825,49 +908,69 @@ export default function ZenKeeper() {
     }
   }
 
-  function startRound() {
-    setTimeLeft(effectiveRounds[roundIdx]);
+  function beginSit() {
+    const d = settings.duration;
+    resetSit();
+    setSitDuration(d);
+    setTimeLeft(d);
     setTimerActive(true);
-    setShowArchonPick(false);
-    setRoundMsg("");
+    setScreen("sit");
     startAmbienceIfNeeded();
   }
 
-  function logRound(archon) {
-    const clarity = !archon;
-    const d = effectiveRounds[roundIdx];
-    // Halved awards — leveling up the orb is earned, not handed out.
-    const lightEarned = clarity ? Math.round(d * 1.0) : Math.max(1, Math.round(d * 0.5));
-    const msg = teacherMsg(archon?.name, clarity, roundIdx);
-    setRoundMsg(msg);
-    setSessionLog(prev=>[...prev,{round:roundIdx+1,archon:archon?.name||null,clarity,lightEarned}]);
-    setSessionLight(prev=>prev+lightEarned);
-    if (archon) {
-      const counts = {...(store.archonCounts||{})};
-      counts[archon.name] = (counts[archon.name]||0)+1;
-      persist({...store, archonCounts:counts});
-    }
-    setShowArchonPick(false);
-    if (roundIdx < effectiveRounds.length-1) { setRoundIdx(r=>r+1); }
-    else { endSession(); }
+  function tagArchon(archon) {
+    setCaughtArchons(prev => [...prev, { name: archon.name, atSec: sitDuration - timeLeft, when: Date.now() }]);
+    const counts = {...(store.archonCounts||{})};
+    counts[archon.name] = (counts[archon.name]||0)+1;
+    persist({...store, archonCounts:counts});
+    closePause();
   }
 
-  function endSession() {
+  function saveInsight() {
+    const t = insightDraft.trim();
+    if (!t) { closePause(); return; }
+    setSitInsights(prev => [...prev, { text: t, atSec: sitDuration - timeLeft, when: Date.now() }]);
+    setInsightDraft("");
+    closePause();
+  }
+
+  function openPause(mode) {
+    if (!timerActive) return;
+    setPauseMode(mode);
+  }
+  function closePause() {
+    setPauseMode(null);
+    setInsightDraft("");
+  }
+
+  function endSit(early) {
+    setTimerActive(false);
     stopAmbience();
-    const totalEarned = sessionLog.reduce((s,r)=>s+r.lightEarned,0)+sessionLight;
+    const sat = Math.max(0, sitDuration - timeLeft);
+    // 1 light per second sat + 2 per archon noticed (awareness bonus).
+    const earned = Math.round(sat) + caughtArchons.length * 2;
+    setSitLight(earned);
     const prevLevel = getOrbLevel(store.totalLight);
-    const nextLevel = getOrbLevel(store.totalLight + totalEarned);
+    const nextLevel = getOrbLevel(store.totalLight + earned);
+
+    const newDownloads = sitInsights.map(ins => ({
+      text: ins.text, date: new Date(ins.when).toISOString(), id: ins.when,
+    }));
     const newStore = {
       ...store,
-      totalLight: store.totalLight + totalEarned,
+      totalLight: store.totalLight + earned,
       sessions: [...(store.sessions||[]), {
         date: new Date().toISOString(),
-        rounds: sessionLog.length+1,
-        light: totalEarned,
-        archons: sessionLog.filter(r=>r.archon).map(r=>r.archon)
-      }]
+        duration: sat,
+        planned: sitDuration,
+        light: earned,
+        archons: caughtArchons.map(c => c.name),
+        early,
+      }],
+      downloads: [...(store.downloads||[]), ...newDownloads],
     };
     persist(newStore);
+
     if (prevLevel.name !== nextLevel.name) {
       ceremonyTone();
       setCeremony({ from: prevLevel, to: nextLevel });
@@ -892,11 +995,16 @@ export default function ZenKeeper() {
     setScreen("home");
   }
 
-  function resetSession() {
+  function resetSit() {
     stopAmbience();
-    setRoundIdx(0); setSessionLog([]); setTimerActive(false);
-    setTimeLeft(0); setShowArchonPick(false); setRoundMsg("");
-    setSessionLight(0);
+    setTimerActive(false);
+    setTimeLeft(0);
+    setSitDuration(0);
+    setCaughtArchons([]);
+    setSitInsights([]);
+    setPauseMode(null);
+    setInsightDraft("");
+    setSitLight(0);
   }
 
   function updateSettings(patch) {
@@ -909,7 +1017,7 @@ export default function ZenKeeper() {
     try { audioCtxRef.current && audioCtxRef.current.close(); } catch(e) {}
   }, []);
 
-  const pct = timeLeft > 0 ? timeLeft / effectiveRounds[roundIdx] : (timerActive ? 0 : 1);
+  const pct = sitDuration > 0 ? timeLeft / sitDuration : 1;
   const circum = 2*Math.PI*54;
 
   // ── RENDER ────────────────────────────────────────────────────────────────
@@ -1046,73 +1154,15 @@ export default function ZenKeeper() {
               </div>
             )}
 
-            {/* Session configuration */}
-            <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(180,140,255,0.12)",borderRadius:14,padding:"14px 14px 12px",marginBottom:16}}>
-              <div style={{fontSize:9,letterSpacing:3,color:"#6A5A8A",textTransform:"uppercase",marginBottom:10}}>Round Length</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
-                {LENGTH_PRESETS.map(p=>{
-                  const active = settings.length === p.value;
-                  return (
-                    <button key={p.value} onClick={()=>updateSettings({length:p.value})} style={{
-                      flex:"1 0 auto",minWidth:52,padding:"8px 10px",
-                      background: active ? `${orb.glow}33` : "rgba(255,255,255,0.03)",
-                      border:`1px solid ${active ? orb.color+"80" : "rgba(180,140,255,0.15)"}`,
-                      borderRadius:10, color: active ? orb.color : "#8A7AA8",
-                      fontSize:11, letterSpacing:2, cursor:"pointer",
-                      fontFamily:"inherit", textTransform:"uppercase"
-                    }}>{p.label}</button>
-                  );
-                })}
-              </div>
-
-              <div style={{fontSize:9,letterSpacing:3,color:"#6A5A8A",textTransform:"uppercase",marginBottom:10}}>Rounds</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
-                {COUNT_PRESETS.map(n=>{
-                  const active = settings.count === n;
-                  return (
-                    <button key={n} onClick={()=>updateSettings({count:n})} style={{
-                      flex:"1 0 auto",minWidth:38,padding:"8px 10px",
-                      background: active ? `${orb.glow}33` : "rgba(255,255,255,0.03)",
-                      border:`1px solid ${active ? orb.color+"80" : "rgba(180,140,255,0.15)"}`,
-                      borderRadius:10, color: active ? orb.color : "#8A7AA8",
-                      fontSize:11, letterSpacing:2, cursor:"pointer",
-                      fontFamily:"inherit"
-                    }}>×{n}</button>
-                  );
-                })}
-              </div>
-
-              <div style={{fontSize:9,letterSpacing:3,color:"#6A5A8A",textTransform:"uppercase",marginBottom:10}}>Ambience</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {AMBIENCE_PRESETS.map(a=>{
-                  const active = settings.ambience === a.id;
-                  return (
-                    <button key={a.id} onClick={()=>updateSettings({ambience:a.id})} style={{
-                      flex:"1 0 auto",minWidth:80,padding:"8px 10px",
-                      background: active ? `${orb.glow}33` : "rgba(255,255,255,0.03)",
-                      border:`1px solid ${active ? orb.color+"80" : "rgba(180,140,255,0.15)"}`,
-                      borderRadius:10, color: active ? orb.color : "#8A7AA8",
-                      fontSize:10, letterSpacing:2, cursor:"pointer",
-                      fontFamily:"inherit", textTransform:"uppercase"
-                    }}>{a.label}</button>
-                  );
-                })}
-              </div>
-
-              <div style={{marginTop:12,fontSize:11,color:"#6A5A8A",textAlign:"center",fontStyle:"italic"}}>
-                {settings.count} × {formatSeconds(settings.length)} · {Math.round(settings.count*settings.length/60)} min total
-              </div>
-            </div>
-
-            {/* Begin */}
-            <button onClick={()=>{resetSession();setScreen("session");}} style={{
-              display:"block",width:"100%",padding:"16px",
+            {/* Begin — goes to Setup where the dial + ambience live */}
+            <button onClick={()=>setScreen("setup")} style={{
+              display:"block",width:"100%",padding:"18px",
               background:`linear-gradient(135deg,${orb.glow}44,${orb.color}22)`,
               border:`1px solid ${orb.color}80`,borderRadius:14,
-              color:orb.color,fontSize:16,letterSpacing:3,cursor:"pointer",
+              color:orb.color,fontSize:16,letterSpacing:4,cursor:"pointer",
               fontFamily:"inherit",textTransform:"uppercase",
               boxShadow:`0 0 20px ${orb.glow}33`,marginBottom:12
-            }}>Begin Session</button>
+            }}>Begin Sit</button>
 
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setScreen("archons")} style={navBtn("#AA88FF44","#AA88FF")}>The Archons</button>
@@ -1121,65 +1171,147 @@ export default function ZenKeeper() {
           </div>
         )}
 
-        {/* ── SESSION ───────────────────────────────────────────────── */}
-        {screen==="session" && (
+        {/* ── SETUP ─────────────────────────────────────────────────── */}
+        {screen==="setup" && (
           <div style={{padding:"40px 24px",textAlign:"center",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-            <div style={{fontSize:10,letterSpacing:4,color:"#3A2A5A",textTransform:"uppercase",marginBottom:32}}>
-              Round {roundIdx+1} of {effectiveRounds.length} · {formatSeconds(effectiveRounds[roundIdx])}
+            <div style={{fontSize:10,letterSpacing:5,color:"#5A4A7A",textTransform:"uppercase",marginBottom:4}}>Choose Your Sit</div>
+            <div style={{fontSize:12,color:"#6A5A8A",fontStyle:"italic",marginBottom:28}}>
+              Any length. No rounds. Just watching.
             </div>
 
-            {/* Session orb with timer ring */}
-            <div style={{position:"relative",width:160,height:160,marginBottom:32}}>
-              <svg style={{position:"absolute",inset:0,transform:"rotate(-90deg)"}} viewBox="0 0 120 120" width="160" height="160">
+            <DurationDial
+              value={settings.duration}
+              onChange={(d)=>updateSettings({duration:d})}
+              color={orb.color} glow={orb.glow}
+            />
+
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",marginTop:14,marginBottom:28,maxWidth:320}}>
+              {DURATION_SHORTCUTS.map(s=>{
+                const active = settings.duration === s;
+                return (
+                  <button key={s} onClick={()=>updateSettings({duration:s})} style={{
+                    padding:"6px 12px",
+                    background: active ? `${orb.glow}33` : "rgba(255,255,255,0.03)",
+                    border:`1px solid ${active ? orb.color+"70" : "rgba(180,140,255,0.13)"}`,
+                    borderRadius:999, color: active ? orb.color : "#8A7AA8",
+                    fontSize:10, letterSpacing:2, cursor:"pointer",
+                    fontFamily:"inherit"
+                  }}>{formatSeconds(s)}</button>
+                );
+              })}
+            </div>
+
+            <div style={{fontSize:9,letterSpacing:3,color:"#6A5A8A",textTransform:"uppercase",marginBottom:10}}>Ambience</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",marginBottom:32,maxWidth:340}}>
+              {AMBIENCE_PRESETS.map(a=>{
+                const active = settings.ambience === a.id;
+                return (
+                  <button key={a.id} onClick={()=>updateSettings({ambience:a.id})} style={{
+                    padding:"8px 14px",
+                    background: active ? `${orb.glow}33` : "rgba(255,255,255,0.03)",
+                    border:`1px solid ${active ? orb.color+"70" : "rgba(180,140,255,0.13)"}`,
+                    borderRadius:12, color: active ? orb.color : "#8A7AA8",
+                    fontSize:10, letterSpacing:2, cursor:"pointer",
+                    fontFamily:"inherit", textTransform:"uppercase"
+                  }}>{a.label}</button>
+                );
+              })}
+            </div>
+
+            <button onClick={beginSit} style={{
+              padding:"16px 56px",
+              background:`linear-gradient(135deg,${orb.glow}55,${orb.color}22)`,
+              border:`1px solid ${orb.color}90`,borderRadius:14,
+              color:orb.color,fontSize:14,letterSpacing:5,cursor:"pointer",
+              fontFamily:"inherit",textTransform:"uppercase",
+              boxShadow:`0 0 24px ${orb.glow}55`,marginBottom:14
+            }}>Start</button>
+
+            <button onClick={()=>setScreen("home")} style={{
+              padding:"10px 20px",background:"none",border:"none",color:"#7A6A9A",
+              fontSize:11,letterSpacing:3,cursor:"pointer",fontFamily:"inherit",textTransform:"uppercase"
+            }}>← Back</button>
+          </div>
+        )}
+
+        {/* ── SIT ───────────────────────────────────────────────────── */}
+        {screen==="sit" && (
+          <div style={{padding:"40px 24px",textAlign:"center",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <div style={{fontSize:10,letterSpacing:4,color:pauseMode ? "#8A7AA8" : "#3A2A5A",textTransform:"uppercase",marginBottom:24,height:14}}>
+              {pauseMode ? "Timer paused" : `Sitting · ${formatSeconds(sitDuration)}`}
+            </div>
+
+            {/* Orb + timer ring — tap the orb mid-sit to mark an archon */}
+            <div style={{position:"relative",width:200,height:200,marginBottom:28}}>
+              <svg style={{position:"absolute",inset:0,transform:"rotate(-90deg)"}} viewBox="0 0 120 120" width="200" height="200">
                 <circle cx="60" cy="60" r="54" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3"/>
-                {timerActive && (
-                  <circle cx="60" cy="60" r="54" fill="none" stroke={orb.color} strokeWidth="3"
-                    strokeDasharray={circum} strokeDashoffset={circum*(1-pct)}
-                    style={{transition:"stroke-dashoffset 1s linear"}} strokeLinecap="round"/>
-                )}
+                <circle cx="60" cy="60" r="54" fill="none" stroke={orb.color} strokeWidth="3"
+                  strokeDasharray={circum} strokeDashoffset={circum*(1-pct)}
+                  style={{transition:"stroke-dashoffset 1s linear",opacity: pauseMode ? 0.35 : 1}} strokeLinecap="round"/>
               </svg>
-              <div style={{
-                position:"absolute",inset:16,borderRadius:"50%",
-                background:`radial-gradient(circle at 38% 35%, ${orb.color}FF 0%, ${orb.glow}AA 60%, ${orb.glow}33 100%)`,
-                boxShadow:`0 0 40px ${orb.glow}88`,
-                animation: timerActive ? "orbFloat 3s ease-in-out infinite" : "none"
-              }}/>
-              {!timerActive && !showArchonPick && (
-                <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",cursor:"pointer"}}
-                  onClick={startRound}>
-                  <div style={{fontSize:10,letterSpacing:3,color:orb.color,textTransform:"uppercase"}}>Tap</div>
-                  <div style={{fontSize:9,color:"#5A4A7A",letterSpacing:2}}>to begin</div>
+              <div
+                onClick={()=>{ if (timerActive && !pauseMode) openPause("archon"); }}
+                style={{
+                  position:"absolute",inset:20,borderRadius:"50%",cursor: timerActive && !pauseMode ? "pointer" : "default",
+                  background:`radial-gradient(circle at 38% 35%, ${orb.color}FF 0%, ${orb.glow}AA 60%, ${orb.glow}33 100%)`,
+                  boxShadow:`0 0 50px ${orb.glow}${pauseMode ? "55" : "99"}`,
+                  transform: orbPulse?"scale(1.15)":"scale(1)",
+                  transition:"transform 0.3s ease, box-shadow 0.4s ease",
+                  animation: timerActive && !pauseMode ? "orbFloat 4s ease-in-out infinite" : "none",
+                  opacity: pauseMode ? 0.55 : 1,
+                }}
+              />
+              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:2,pointerEvents:"none"}}>
+                <div style={{fontSize:28,color:`${orb.color}DD`,letterSpacing:2,fontVariantNumeric:"tabular-nums",textShadow:`0 0 16px ${orb.glow}66`}}>
+                  {formatClock(timeLeft)}
                 </div>
-              )}
-              {timerActive && (
-                <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:2}}>
-                  <div style={{fontSize:11,color:`${orb.color}88`,letterSpacing:2}}>watch</div>
-                  <div style={{fontSize:10,color:`${orb.color}55`,letterSpacing:2,fontVariantNumeric:"tabular-nums"}}>
-                    {formatSeconds(timeLeft)}
-                  </div>
-                </div>
-              )}
+                <div style={{fontSize:9,color:`${orb.color}66`,letterSpacing:3,textTransform:"uppercase"}}>watch</div>
+              </div>
             </div>
 
-            {/* Round message */}
-            {roundMsg && !showArchonPick && (
-              <div style={{fontSize:14,color:"#9B8FC0",fontStyle:"italic",marginBottom:24,maxWidth:280,lineHeight:1.6}}>
-                {roundMsg}
+            {/* Mid-sit controls — both pause the timer */}
+            {timerActive && !pauseMode && (
+              <>
+                <div style={{fontSize:11,color:"#6A5A8A",fontStyle:"italic",marginBottom:14,maxWidth:280,lineHeight:1.6}}>
+                  Tap the orb when an archon pulls you. Mark an insight if one arises.
+                </div>
+                <div style={{display:"flex",gap:10,marginBottom:18}}>
+                  <button onClick={()=>openPause("archon")} style={sitActionBtn(orb.color, orb.glow)}>◉ Archon</button>
+                  <button onClick={()=>openPause("insight")} style={sitActionBtn(orb.color, orb.glow)}>✦ Insight</button>
+                </div>
+                <div style={{fontSize:10,color:"#5A4A7A",letterSpacing:2,textTransform:"uppercase",marginBottom:10}}>
+                  Caught: {caughtArchons.length} · Insights: {sitInsights.length}
+                </div>
+                <button onClick={()=>endSit(true)} style={navBtn("#FF885544","#FF8855")}>End Sit Early</button>
+              </>
+            )}
+
+            {/* Pause overlay — archon picker */}
+            {pauseMode === "archon" && (
+              <div style={{width:"100%",maxWidth:420,background:"rgba(10,8,26,0.6)",border:"1px solid rgba(180,140,255,0.2)",borderRadius:16,padding:"16px 8px",backdropFilter:"blur(8px)"}}>
+                <div style={{fontSize:10,letterSpacing:3,color:"#8A7AA8",textTransform:"uppercase",marginBottom:8}}>Which one?</div>
+                <ArchonCarousel onPick={tagArchon} orbColor={orb.color} orbGlow={orb.glow}/>
+                <button onClick={closePause} style={{marginTop:10,background:"none",border:"none",color:"#6A5A8A",fontSize:11,letterSpacing:2,cursor:"pointer",fontFamily:"inherit"}}>
+                  skip — back to sitting
+                </button>
               </div>
             )}
 
-            {/* Archon pick — carousel */}
-            {showArchonPick && (
-              <ArchonCarousel onPick={logRound} orbColor={orb.color} orbGlow={orb.glow}/>
-            )}
-
-            {/* Controls */}
-            {!timerActive && !showArchonPick && (
-              <div style={{display:"flex",gap:10,marginTop:20}}>
-                {roundIdx > 0 && (
-                  <button onClick={endSession} style={navBtn("#FF885544","#FF8855")}>End Session</button>
-                )}
-                <button onClick={()=>{resetSession();setScreen("home");}} style={navBtn("#44444444","#888888")}>← Back</button>
+            {/* Pause overlay — insight capture */}
+            {pauseMode === "insight" && (
+              <div style={{width:"100%",maxWidth:420,background:"rgba(10,8,26,0.6)",border:"1px solid rgba(180,140,255,0.2)",borderRadius:16,padding:"18px",backdropFilter:"blur(8px)"}}>
+                <div style={{fontSize:10,letterSpacing:3,color:"#8A7AA8",textTransform:"uppercase",marginBottom:10}}>Note the transmission</div>
+                <textarea
+                  autoFocus
+                  value={insightDraft}
+                  onChange={(e)=>setInsightDraft(e.target.value)}
+                  placeholder="A fragment, a phrase, a knowing..."
+                  style={{width:"100%",minHeight:100,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(180,140,255,0.2)",
+                    borderRadius:10,padding:12,color:"#E8E0FF",fontSize:13,fontFamily:"inherit",resize:"none",outline:"none",boxSizing:"border-box"}}/>
+                <div style={{display:"flex",gap:10,marginTop:12}}>
+                  <button onClick={saveInsight} style={{...sitActionBtn(orb.color, orb.glow),flex:1}}>Save</button>
+                  <button onClick={closePause} style={{...navBtn("#44444444","#888888"),flex:1}}>Cancel</button>
+                </div>
               </div>
             )}
           </div>
@@ -1231,7 +1363,7 @@ export default function ZenKeeper() {
         {/* ── POST SESSION ──────────────────────────────────────────── */}
         {screen==="post" && (
           <div style={{padding:"40px 24px",textAlign:"center"}}>
-            <div style={{fontSize:10,letterSpacing:5,color:"#5A4A7A",textTransform:"uppercase",marginBottom:16}}>Session Complete</div>
+            <div style={{fontSize:10,letterSpacing:5,color:"#5A4A7A",textTransform:"uppercase",marginBottom:16}}>Sit Complete</div>
 
             <div style={{display:"flex",justifyContent:"center",marginBottom:20}}>
               <div style={{
@@ -1245,27 +1377,42 @@ export default function ZenKeeper() {
             <div style={{fontSize:15,color:"#9B8FC0",fontStyle:"italic",marginBottom:8,lineHeight:1.7}}>
               {sessionEndMsg(store.sessions?.length||0, store.totalLight)}
             </div>
-            <div style={{fontSize:28,color:orb.color,marginBottom:4}}>+{sessionLight}</div>
+            <div style={{fontSize:28,color:orb.color,marginBottom:4}}>+{sitLight}</div>
             <div style={{fontSize:10,letterSpacing:3,color:"#4A3A6A",textTransform:"uppercase",marginBottom:24}}>light returned</div>
 
-            {sessionLog.length>0 && (
-              <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"16px",marginBottom:20,textAlign:"left"}}>
-                <div style={{fontSize:9,letterSpacing:3,color:"#4A3A6A",textTransform:"uppercase",marginBottom:10}}>Session Log</div>
-                {sessionLog.map((r,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                    <div style={{fontSize:9,color:"#4A3A6A",width:50}}>Round {r.round}</div>
-                    {r.clarity
-                      ? <span style={{fontSize:11,color:"#88FF88"}}>✦ Clarity</span>
-                      : <span style={{fontSize:11,color:"#FF8855"}}>{r.archon}</span>
-                    }
-                    <span style={{fontSize:10,color:orb.color,marginLeft:"auto"}}>+{r.lightEarned}</span>
-                  </div>
-                ))}
+            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"16px",marginBottom:20,textAlign:"left"}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+                <span style={{fontSize:9,letterSpacing:3,color:"#4A3A6A",textTransform:"uppercase"}}>Sit Summary</span>
+                <span style={{fontSize:10,color:"#6A5A8A"}}>{formatSeconds(sitDuration - timeLeft)} of {formatSeconds(sitDuration)}</span>
               </div>
-            )}
+              {caughtArchons.length === 0 && sitInsights.length === 0 && (
+                <div style={{fontSize:11,color:"#88FF88",fontStyle:"italic"}}>✦ Clarity held throughout.</div>
+              )}
+              {caughtArchons.length > 0 && (
+                <div style={{marginBottom:sitInsights.length?10:0}}>
+                  <div style={{fontSize:9,letterSpacing:2,color:"#6A5A8A",textTransform:"uppercase",marginBottom:6}}>Archons noticed</div>
+                  {caughtArchons.map((c,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,fontSize:11}}>
+                      <span style={{color:"#FF8855"}}>{c.name}</span>
+                      <span style={{color:"#4A3A6A",fontSize:10,marginLeft:"auto"}}>@ {formatClock(c.atSec)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {sitInsights.length > 0 && (
+                <div>
+                  <div style={{fontSize:9,letterSpacing:2,color:"#6A5A8A",textTransform:"uppercase",marginBottom:6}}>Insights captured</div>
+                  {sitInsights.map((ins,i)=>(
+                    <div key={i} style={{fontSize:11,color:"#C8B8E8",marginBottom:4,fontStyle:"italic",lineHeight:1.5}}>
+                      "{ins.text}"
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div style={{fontSize:12,color:"#5A4A7A",fontStyle:"italic",marginBottom:14}}>
-              Any transmissions to record?
+              Anything else to record?
             </div>
             <textarea
               value={downloadText}
@@ -1279,7 +1426,7 @@ export default function ZenKeeper() {
               {downloadText.trim() && (
                 <button onClick={saveDownload} style={{flex:1,...btnStyle(orb.color,orb.glow)}}>Save Fragment</button>
               )}
-              <button onClick={()=>{resetSession();setScreen("home");}} style={{flex:1,...btnStyle("#AA88FF","#6600FF")}}>← Home</button>
+              <button onClick={()=>{resetSit();setScreen("home");}} style={{flex:1,...btnStyle("#AA88FF","#6600FF")}}>← Home</button>
             </div>
           </div>
         )}
@@ -1436,5 +1583,13 @@ function btnStyle(color,glow) {
     borderRadius:12,color,fontSize:12,letterSpacing:2,cursor:"pointer",
     fontFamily:"'Palatino Linotype','Book Antiqua',Palatino,serif",textTransform:"uppercase",
     boxShadow:`0 0 14px ${glow}33`
+  };
+}
+function sitActionBtn(color, glow) {
+  return {
+    padding:"12px 22px", background:`${glow}22`, border:`1px solid ${color}70`,
+    borderRadius:12, color, fontSize:12, letterSpacing:3, cursor:"pointer",
+    fontFamily:"'Palatino Linotype','Book Antiqua',Palatino,serif", textTransform:"uppercase",
+    boxShadow:`0 0 14px ${glow}33`,
   };
 }
