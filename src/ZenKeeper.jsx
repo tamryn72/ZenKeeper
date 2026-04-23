@@ -960,16 +960,20 @@ export default function ZenKeeper() {
         {STARS.map((s,i)=>(
           s.jewel ? (
             <g key={i}>
+              {/* Outer halo — bigger swing so jewels really pulse */}
               <circle cx={`${s.x}%`} cy={`${s.y}%`} r={s.s*3} fill="url(#jewelGlow)" opacity={s.o*0.5}>
-                <animate attributeName="opacity" values={`${s.o*0.3};${s.o*0.7};${s.o*0.3}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+                <animate attributeName="opacity" values={`${s.o*0.15};${s.o*0.9};${s.o*0.15}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
               </circle>
               <circle cx={`${s.x}%`} cy={`${s.y}%`} r={s.s} fill={s.tint} opacity={s.o}>
-                <animate attributeName="opacity" values={`${s.o};${Math.min(s.o+0.35,1)};${s.o}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+                <animate attributeName="opacity" values={`${s.o*0.3};1;${s.o*0.3}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+                <animate attributeName="r" values={`${s.s*0.7};${s.s*1.3};${s.s*0.7}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
               </circle>
             </g>
           ) : (
+            /* Wider dim→bright swing + radius pulse so twinkle is actually visible */
             <circle key={i} cx={`${s.x}%`} cy={`${s.y}%`} r={s.s} fill={s.tint} opacity={s.o}>
-              <animate attributeName="opacity" values={`${s.o};${Math.min(s.o+0.35,0.95)};${s.o}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+              <animate attributeName="opacity" values={`${s.o*0.25};${Math.min(s.o*2.2, 1)};${s.o*0.25}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+              <animate attributeName="r" values={`${s.s*0.8};${s.s*1.25};${s.s*0.8}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
             </circle>
           )
         ))}
