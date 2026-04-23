@@ -306,26 +306,55 @@ const ARCHONS = [
 ];
 
 // ── ROUND SCHEDULE ────────────────────────────────────────────────────────────
+// Classic ladder kept as a fallback preset; live sessions use `settings` below.
 const ROUNDS = [10,20,30,45,60,90,120];
 
+// Selectable round lengths (seconds) shown on the Home screen.
+const LENGTH_PRESETS = [
+  { label:"1m",  value:60   },
+  { label:"2m",  value:120  },
+  { label:"5m",  value:300  },
+  { label:"10m", value:600  },
+  { label:"15m", value:900  },
+  { label:"20m", value:1200 },
+  { label:"30m", value:1800 },
+];
+const COUNT_PRESETS = [1, 2, 3, 5, 7, 10];
+
+const AMBIENCE_PRESETS = [
+  { id:"silence", label:"Silence"      },
+  { id:"creek",   label:"Water Creek"  },
+  { id:"night",   label:"Nature Night" },
+  { id:"day",     label:"Nature Day"   },
+];
+
+const DEFAULT_SETTINGS = { length:60, count:3, ambience:"silence" };
+
 // ── ORB LEVELS ────────────────────────────────────────────────────────────────
+// Thresholds intentionally steep — leveling is a ceremony, not a tick.
 const ORB_LEVELS = [
-  { min:0,    name:"Flickering Ember",  color:"#888888", glow:"#555555", size:60  },
-  { min:50,   name:"Seeker",            color:"#FFCC88", glow:"#FF8800", size:66  },
-  { min:150,  name:"Watcher",           color:"#FFD700", glow:"#FF8C00", size:72  },
-  { min:300,  name:"Light Keeper",      color:"#FFB347", glow:"#FF6600", size:78  },
-  { min:500,  name:"Thread Weaver",     color:"#FF8C94", glow:"#FF4466", size:84  },
-  { min:750,  name:"Archon Witness",    color:"#88DDFF", glow:"#0088FF", size:90  },
-  { min:1100, name:"Sophia's Heir",     color:"#AA88FF", glow:"#6600FF", size:96  },
-  { min:1500, name:"Flame Carrier",     color:"#CC88FF", glow:"#AA00FF", size:102 },
-  { min:2000, name:"Cosmic Weaver",     color:"#FFAAFF", glow:"#FF00FF", size:108 },
-  { min:3000, name:"Living Light",      color:"#FFFFFF", glow:"#AADDFF", size:118 },
+  { min:0,     name:"Flickering Ember",  color:"#888888", glow:"#555555", size:60  },
+  { min:120,   name:"Seeker",            color:"#FFCC88", glow:"#FF8800", size:66  },
+  { min:360,   name:"Watcher",           color:"#FFD700", glow:"#FF8C00", size:72  },
+  { min:720,   name:"Light Keeper",      color:"#FFB347", glow:"#FF6600", size:78  },
+  { min:1200,  name:"Thread Weaver",     color:"#FF8C94", glow:"#FF4466", size:84  },
+  { min:1800,  name:"Archon Witness",    color:"#88DDFF", glow:"#0088FF", size:90  },
+  { min:2600,  name:"Sophia's Heir",     color:"#AA88FF", glow:"#6600FF", size:96  },
+  { min:3600,  name:"Flame Carrier",     color:"#CC88FF", glow:"#AA00FF", size:102 },
+  { min:4800,  name:"Cosmic Weaver",     color:"#FFAAFF", glow:"#FF00FF", size:108 },
+  { min:7000,  name:"Living Light",      color:"#FFFFFF", glow:"#AADDFF", size:118 },
 ];
 
 function getOrbLevel(light) {
   let lv = ORB_LEVELS[0];
   for (const l of ORB_LEVELS) { if (light >= l.min) lv = l; }
   return lv;
+}
+
+function formatSeconds(s) {
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s/60), rem = s%60;
+  return rem ? `${m}m ${rem}s` : `${m}m`;
 }
 
 // ── TEACHER MESSAGES ──────────────────────────────────────────────────────────
@@ -358,19 +387,55 @@ const STORE_KEY = "zenkeeper_v1";
 function loadState() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        totalLight: 0, sessions: [], downloads: [], archonCounts: {},
+        ...parsed,
+        settings: { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) },
+      };
+    }
   } catch(e) {}
-  return { totalLight:0, sessions:[], downloads:[], archonCounts:{} };
+  return { totalLight:0, sessions:[], downloads:[], archonCounts:{}, settings:DEFAULT_SETTINGS };
 }
 function saveState(s) {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch(e) {}
 }
 
 // ── STARS ─────────────────────────────────────────────────────────────────────
-const STARS = Array.from({length:100},(_,i)=>({
-  x: Math.random()*100, y: Math.random()*100,
-  s: Math.random()*1.8+0.5, o: Math.random()*0.5+0.15,
-  d: Math.random()*4+2
+// Three tiers: fine dust, regular twinkle, rare "jewel" stars with colored flare.
+const STAR_TINTS = ["#FFFFFF","#FFFFFF","#FFFFFF","#CFE6FF","#FFE8C8","#E8D8FF"];
+const STARS = Array.from({length:180},(_,i)=>{
+  const tier = Math.random();
+  const jewel = tier > 0.94;
+  const big = !jewel && tier > 0.78;
+  return {
+    x: Math.random()*100, y: Math.random()*100,
+    s: jewel ? Math.random()*1.2+1.8 : big ? Math.random()*1.1+1.1 : Math.random()*0.9+0.3,
+    o: jewel ? Math.random()*0.3+0.6 : big ? Math.random()*0.4+0.35 : Math.random()*0.35+0.1,
+    d: Math.random()*5+2.5,
+    delay: Math.random()*6,
+    tint: jewel ? STAR_TINTS[Math.floor(Math.random()*STAR_TINTS.length)] : "#FFFFFF",
+    jewel,
+  };
+});
+
+// Drifting nebula blobs — slow translate + opacity breathing.
+const NEBULAE = [
+  { x: 15, y: 20, size: 520, hue: "violet", dur: 46, delay: 0,  drift: 18 },
+  { x: 78, y: 30, size: 440, hue: "accent", dur: 58, delay: 8,  drift: 22 },
+  { x: 35, y: 75, size: 600, hue: "indigo", dur: 64, delay: 14, drift: 26 },
+  { x: 85, y: 82, size: 380, hue: "accent", dur: 52, delay: 22, drift: 16 },
+  { x: 50, y: 45, size: 700, hue: "deep",   dur: 72, delay: 4,  drift: 10 },
+];
+
+// Shooting stars — staggered so one crosses every few seconds.
+const SHOOTERS = Array.from({length:6},(_,i)=>({
+  top: 5 + Math.random()*40,
+  left: -10 - Math.random()*20,
+  dur: 2.4 + Math.random()*1.6,
+  delay: i * 7 + Math.random()*4,
+  len: 90 + Math.random()*80,
 }));
 
 // ── ARCHON CAROUSEL ───────────────────────────────────────────────────────────
@@ -504,10 +569,188 @@ function ArchonCarousel({ onPick, orbColor, orbGlow }) {
   );
 }
 
+// ── AMBIENT SOUND SYNTHESIS ───────────────────────────────────────────────────
+// Each preset returns a stop() function. Sounds are fully synthesized via Web
+// Audio so no external files are needed.
+
+function makeNoiseBuffer(ctx, kind) {
+  const len = 2 * ctx.sampleRate;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  if (kind === "brown") {
+    let last = 0;
+    for (let i=0;i<len;i++) { const w = Math.random()*2-1; last = (last + 0.02*w)/1.02; d[i] = last*3.2; }
+  } else {
+    // pink via Paul Kellet's filter
+    let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+    for (let i=0;i<len;i++) {
+      const w = Math.random()*2-1;
+      b0 = 0.99886*b0 + w*0.0555179;
+      b1 = 0.99332*b1 + w*0.0750759;
+      b2 = 0.96900*b2 + w*0.1538520;
+      b3 = 0.86650*b3 + w*0.3104856;
+      b4 = 0.55000*b4 + w*0.5329522;
+      b5 = -0.7616*b5 - w*0.0168980;
+      d[i] = (b0+b1+b2+b3+b4+b5+b6 + w*0.5362) * 0.22;
+      b6 = w * 0.115926;
+    }
+  }
+  return buf;
+}
+
+function startAmbience(ctx, preset) {
+  if (preset === "silence") return () => {};
+  const master = ctx.createGain();
+  master.gain.value = 0;
+  master.connect(ctx.destination);
+  master.gain.linearRampToValueAtTime(0.25, ctx.currentTime + 1.4);
+
+  const disposers = [];
+  const timers = [];
+  let stopped = false;
+
+  function schedule(delayMs, fn) {
+    const id = setTimeout(() => { if (!stopped) fn(); }, delayMs);
+    timers.push(id);
+  }
+
+  if (preset === "creek") {
+    const src = ctx.createBufferSource();
+    src.buffer = makeNoiseBuffer(ctx, "brown"); src.loop = true;
+    const hp = ctx.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=120;
+    const lp = ctx.createBiquadFilter(); lp.type="lowpass";  lp.frequency.value=1100;
+    src.connect(hp); hp.connect(lp); lp.connect(master);
+    src.start();
+    disposers.push(()=>{ try{src.stop();}catch(e){} });
+    // bubbling blips
+    const bubble = () => {
+      try {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        const f = 900 + Math.random()*1600;
+        o.frequency.setValueAtTime(f, ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(f*0.55, ctx.currentTime+0.14);
+        g.gain.setValueAtTime(0.08, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+0.18);
+        o.connect(g); g.connect(master); o.start(); o.stop(ctx.currentTime+0.2);
+      } catch(e){}
+      if (!stopped) schedule(180 + Math.random()*380, bubble);
+    };
+    schedule(600, bubble);
+  }
+
+  else if (preset === "night") {
+    const src = ctx.createBufferSource();
+    src.buffer = makeNoiseBuffer(ctx, "pink"); src.loop = true;
+    const lp = ctx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=650;
+    const windGain = ctx.createGain(); windGain.gain.value = 0.45;
+    src.connect(lp); lp.connect(windGain); windGain.connect(master);
+    src.start();
+    disposers.push(()=>{ try{src.stop();}catch(e){} });
+    // crickets
+    const cricket = () => {
+      try {
+        const base = 4200 + Math.random()*1800;
+        const reps = 3 + Math.floor(Math.random()*4);
+        for (let i=0;i<reps;i++) {
+          const t = ctx.currentTime + i*0.08;
+          const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.type = "triangle"; o.frequency.setValueAtTime(base, t);
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.06, t+0.005);
+          g.gain.exponentialRampToValueAtTime(0.001, t+0.05);
+          o.connect(g); g.connect(master); o.start(t); o.stop(t+0.06);
+        }
+      } catch(e){}
+      if (!stopped) schedule(1800 + Math.random()*2400, cricket);
+    };
+    schedule(1200, cricket);
+    // distant hoot
+    const hoot = () => {
+      try {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type="sine"; o.frequency.setValueAtTime(190, ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(170, ctx.currentTime+0.6);
+        g.gain.setValueAtTime(0, ctx.currentTime);
+        g.gain.linearRampToValueAtTime(0.08, ctx.currentTime+0.2);
+        g.gain.linearRampToValueAtTime(0, ctx.currentTime+0.8);
+        o.connect(g); g.connect(master); o.start(); o.stop(ctx.currentTime+0.85);
+      } catch(e){}
+      if (!stopped) schedule(8000 + Math.random()*9000, hoot);
+    };
+    schedule(5000, hoot);
+  }
+
+  else if (preset === "day") {
+    const src = ctx.createBufferSource();
+    src.buffer = makeNoiseBuffer(ctx, "pink"); src.loop = true;
+    const lp = ctx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=1400;
+    const breezeGain = ctx.createGain(); breezeGain.gain.value = 0.35;
+    src.connect(lp); lp.connect(breezeGain); breezeGain.connect(master);
+    src.start();
+    disposers.push(()=>{ try{src.stop();}catch(e){} });
+    // bird tweets
+    const tweet = () => {
+      try {
+        const start = 2200 + Math.random()*1800;
+        const end = start + (Math.random()*1800-900);
+        const dur = 0.15 + Math.random()*0.25;
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type="sine";
+        o.frequency.setValueAtTime(start, ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(Math.max(800,end), ctx.currentTime+dur);
+        g.gain.setValueAtTime(0, ctx.currentTime);
+        g.gain.linearRampToValueAtTime(0.09, ctx.currentTime+0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+dur);
+        o.connect(g); g.connect(master); o.start(); o.stop(ctx.currentTime+dur+0.05);
+        // sometimes a quick double
+        if (Math.random() < 0.45) {
+          const t2 = ctx.currentTime + dur + 0.08;
+          const o2 = ctx.createOscillator(); const g2 = ctx.createGain();
+          o2.type="sine";
+          o2.frequency.setValueAtTime(start*1.1, t2);
+          o2.frequency.exponentialRampToValueAtTime(start*0.8, t2+dur*0.7);
+          g2.gain.setValueAtTime(0, t2);
+          g2.gain.linearRampToValueAtTime(0.08, t2+0.02);
+          g2.gain.exponentialRampToValueAtTime(0.001, t2+dur*0.7);
+          o2.connect(g2); g2.connect(master); o2.start(t2); o2.stop(t2+dur*0.7+0.05);
+        }
+      } catch(e){}
+      if (!stopped) schedule(2500 + Math.random()*4500, tweet);
+    };
+    schedule(1500, tweet);
+  }
+
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    timers.forEach(clearTimeout);
+    try { master.gain.cancelScheduledValues(ctx.currentTime); } catch(e){}
+    try { master.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.9); } catch(e){}
+    setTimeout(() => disposers.forEach(fn => fn()), 1000);
+  };
+}
+
+// Ceremonial chord for orb level-up — three Solfeggio tones staggered in.
+function ceremonyTone() {
+  try {
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    [396, 528, 639].forEach((f, i) => {
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.type = "sine"; o.frequency.value = f;
+      o.connect(g); g.connect(ctx.destination);
+      const t0 = ctx.currentTime + i*0.4;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.16, t0 + 0.6);
+      g.gain.linearRampToValueAtTime(0, t0 + 4.5);
+      o.start(t0); o.stop(t0 + 4.6);
+    });
+  } catch(e) {}
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ZenKeeper() {
   const [store, setStore] = useState(() => loadState());
-  const [screen, setScreen] = useState("home"); // home | session | post | archons | journal | addDownload
+  const [screen, setScreen] = useState("home"); // home | session | post | ceremony | archons | journal | addDownload
   const [roundIdx, setRoundIdx] = useState(0);
   const [sessionLog, setSessionLog] = useState([]);
   const [timerActive, setTimerActive] = useState(false);
@@ -517,8 +760,13 @@ export default function ZenKeeper() {
   const [downloadText, setDownloadText] = useState("");
   const [orbPulse, setOrbPulse] = useState(false);
   const [sessionLight, setSessionLight] = useState(0);
+  const [ceremony, setCeremony] = useState(null); // { from, to } when a level-up happens
   const timerRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const ambienceStopRef = useRef(null);
 
+  const settings = store.settings || DEFAULT_SETTINGS;
+  const effectiveRounds = Array.from({length: settings.count}, () => settings.length);
   const orb = getOrbLevel(store.totalLight);
 
   // nemesis
@@ -555,33 +803,62 @@ export default function ZenKeeper() {
     } catch(e) {}
   }
 
+  function ensureAudioCtx() {
+    if (!audioCtxRef.current) {
+      try { audioCtxRef.current = new (window.AudioContext||window.webkitAudioContext)(); } catch(e) {}
+    }
+    const ctx = audioCtxRef.current;
+    if (ctx && ctx.state === "suspended") { try { ctx.resume(); } catch(e) {} }
+    return ctx;
+  }
+
+  function startAmbienceIfNeeded() {
+    if (ambienceStopRef.current) return;
+    if (settings.ambience === "silence") return;
+    const ctx = ensureAudioCtx();
+    if (!ctx) return;
+    ambienceStopRef.current = startAmbience(ctx, settings.ambience);
+  }
+
+  function stopAmbience() {
+    if (ambienceStopRef.current) {
+      try { ambienceStopRef.current(); } catch(e) {}
+      ambienceStopRef.current = null;
+    }
+  }
+
   function startRound() {
-    setTimeLeft(ROUNDS[roundIdx]);
+    setTimeLeft(effectiveRounds[roundIdx]);
     setTimerActive(true);
     setShowArchonPick(false);
     setRoundMsg("");
+    startAmbienceIfNeeded();
   }
 
   function logRound(archon) {
     const clarity = !archon;
-    const lightEarned = clarity ? ROUNDS[roundIdx]*2 : ROUNDS[roundIdx];
+    const d = effectiveRounds[roundIdx];
+    // Halved awards — leveling up the orb is earned, not handed out.
+    const lightEarned = clarity ? Math.round(d * 1.0) : Math.max(1, Math.round(d * 0.5));
     const msg = teacherMsg(archon?.name, clarity, roundIdx);
     setRoundMsg(msg);
     setSessionLog(prev=>[...prev,{round:roundIdx+1,archon:archon?.name||null,clarity,lightEarned}]);
     setSessionLight(prev=>prev+lightEarned);
-    // update archon counts
     if (archon) {
       const counts = {...(store.archonCounts||{})};
       counts[archon.name] = (counts[archon.name]||0)+1;
       persist({...store, archonCounts:counts});
     }
     setShowArchonPick(false);
-    if (roundIdx < ROUNDS.length-1) { setRoundIdx(r=>r+1); }
+    if (roundIdx < effectiveRounds.length-1) { setRoundIdx(r=>r+1); }
     else { endSession(); }
   }
 
   function endSession() {
+    stopAmbience();
     const totalEarned = sessionLog.reduce((s,r)=>s+r.lightEarned,0)+sessionLight;
+    const prevLevel = getOrbLevel(store.totalLight);
+    const nextLevel = getOrbLevel(store.totalLight + totalEarned);
     const newStore = {
       ...store,
       totalLight: store.totalLight + totalEarned,
@@ -593,7 +870,13 @@ export default function ZenKeeper() {
       }]
     };
     persist(newStore);
-    setScreen("post");
+    if (prevLevel.name !== nextLevel.name) {
+      ceremonyTone();
+      setCeremony({ from: prevLevel, to: nextLevel });
+      setScreen("ceremony");
+    } else {
+      setScreen("post");
+    }
   }
 
   function saveDownload() {
@@ -612,25 +895,104 @@ export default function ZenKeeper() {
   }
 
   function resetSession() {
+    stopAmbience();
     setRoundIdx(0); setSessionLog([]); setTimerActive(false);
     setTimeLeft(0); setShowArchonPick(false); setRoundMsg("");
     setSessionLight(0);
   }
 
-  const pct = timeLeft > 0 ? timeLeft / ROUNDS[roundIdx] : (timerActive ? 0 : 1);
+  function updateSettings(patch) {
+    persist({ ...store, settings: { ...settings, ...patch } });
+  }
+
+  // Clean up audio if the component unmounts mid-session.
+  useEffect(() => () => {
+    stopAmbience();
+    try { audioCtxRef.current && audioCtxRef.current.close(); } catch(e) {}
+  }, []);
+
+  const pct = timeLeft > 0 ? timeLeft / effectiveRounds[roundIdx] : (timerActive ? 0 : 1);
   const circum = 2*Math.PI*54;
 
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div style={{minHeight:"100vh",background:"#03040a",fontFamily:"'Palatino Linotype','Book Antiqua',Palatino,serif",color:"#E8E0FF",position:"relative",overflow:"hidden"}}>
-      {/* Stars */}
+      {/* ── COSMIC BACKGROUND ───────────────────────────────────────────────── */}
+      {/* Base deep-space gradient */}
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,
+        background:"radial-gradient(ellipse at 50% 0%, #0a0720 0%, #05051a 38%, #020308 75%, #000004 100%)"
+      }}/>
+
+      {/* Slowly rotating aurora wisp */}
+      <div style={{position:"fixed",inset:"-25%",pointerEvents:"none",zIndex:0,opacity:0.35,
+        background:`conic-gradient(from 0deg at 50% 55%, transparent 0deg, ${orb.glow}22 60deg, transparent 120deg, ${orb.color}18 200deg, transparent 260deg, ${orb.glow}22 320deg, transparent 360deg)`,
+        filter:"blur(80px)",
+        animation:"auroraSpin 90s linear infinite"
+      }}/>
+
+      {/* Drifting nebulae — each breathes + translates on its own cycle */}
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+        {NEBULAE.map((n,i)=>{
+          const tint = n.hue==="accent" ? orb.color : n.hue==="violet" ? "#8A5CFF" : n.hue==="indigo" ? "#4464C8" : "#2A1A5A";
+          return (
+            <div key={i} style={{
+              position:"absolute",
+              left:`${n.x}%`, top:`${n.y}%`,
+              width:n.size, height:n.size,
+              marginLeft:-n.size/2, marginTop:-n.size/2,
+              borderRadius:"50%",
+              background:`radial-gradient(circle, ${tint}44 0%, ${tint}22 35%, transparent 70%)`,
+              filter:"blur(60px)",
+              mixBlendMode:"screen",
+              animation:`nebDrift${i} ${n.dur}s ease-in-out ${n.delay}s infinite, nebBreathe ${n.dur*0.6}s ease-in-out ${n.delay}s infinite`
+            }}/>
+          );
+        })}
+      </div>
+
+      {/* Stars — twinkling, with occasional colored jewel stars */}
       <svg style={{position:"fixed",inset:0,width:"100%",height:"100%",pointerEvents:"none",zIndex:0}} preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <radialGradient id="jewelGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="white" stopOpacity="1"/>
+            <stop offset="40%" stopColor="white" stopOpacity="0.6"/>
+            <stop offset="100%" stopColor="white" stopOpacity="0"/>
+          </radialGradient>
+        </defs>
         {STARS.map((s,i)=>(
-          <circle key={i} cx={`${s.x}%`} cy={`${s.y}%`} r={s.s} fill="white" opacity={s.o}>
-            <animate attributeName="opacity" values={`${s.o};${Math.min(s.o+0.3,0.9)};${s.o}`} dur={`${s.d}s`} repeatCount="indefinite"/>
-          </circle>
+          s.jewel ? (
+            <g key={i}>
+              <circle cx={`${s.x}%`} cy={`${s.y}%`} r={s.s*3} fill="url(#jewelGlow)" opacity={s.o*0.5}>
+                <animate attributeName="opacity" values={`${s.o*0.3};${s.o*0.7};${s.o*0.3}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+              </circle>
+              <circle cx={`${s.x}%`} cy={`${s.y}%`} r={s.s} fill={s.tint} opacity={s.o}>
+                <animate attributeName="opacity" values={`${s.o};${Math.min(s.o+0.35,1)};${s.o}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+              </circle>
+            </g>
+          ) : (
+            <circle key={i} cx={`${s.x}%`} cy={`${s.y}%`} r={s.s} fill={s.tint} opacity={s.o}>
+              <animate attributeName="opacity" values={`${s.o};${Math.min(s.o+0.35,0.95)};${s.o}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
+            </circle>
+          )
         ))}
       </svg>
+
+      {/* Shooting stars — diagonal streaks that cross the sky periodically */}
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+        {SHOOTERS.map((sh,i)=>(
+          <div key={i} style={{
+            position:"absolute",
+            top:`${sh.top}%`, left:`${sh.left}%`,
+            width:sh.len, height:1.5,
+            background:"linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.9) 60%, #FFFFFF 100%)",
+            borderRadius:2,
+            opacity:0,
+            transform:"rotate(18deg)",
+            filter:"drop-shadow(0 0 6px rgba(200,220,255,0.9))",
+            animation:`shoot ${sh.dur}s ease-in ${sh.delay}s infinite`
+          }}/>
+        ))}
+      </div>
 
       <div style={{position:"relative",zIndex:1,maxWidth:480,margin:"0 auto",padding:"0 0 80px"}}>
 
@@ -682,6 +1044,64 @@ export default function ZenKeeper() {
               </div>
             )}
 
+            {/* Session configuration */}
+            <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(180,140,255,0.12)",borderRadius:14,padding:"14px 14px 12px",marginBottom:16}}>
+              <div style={{fontSize:9,letterSpacing:3,color:"#6A5A8A",textTransform:"uppercase",marginBottom:10}}>Round Length</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+                {LENGTH_PRESETS.map(p=>{
+                  const active = settings.length === p.value;
+                  return (
+                    <button key={p.value} onClick={()=>updateSettings({length:p.value})} style={{
+                      flex:"1 0 auto",minWidth:52,padding:"8px 10px",
+                      background: active ? `${orb.glow}33` : "rgba(255,255,255,0.03)",
+                      border:`1px solid ${active ? orb.color+"80" : "rgba(180,140,255,0.15)"}`,
+                      borderRadius:10, color: active ? orb.color : "#8A7AA8",
+                      fontSize:11, letterSpacing:2, cursor:"pointer",
+                      fontFamily:"inherit", textTransform:"uppercase"
+                    }}>{p.label}</button>
+                  );
+                })}
+              </div>
+
+              <div style={{fontSize:9,letterSpacing:3,color:"#6A5A8A",textTransform:"uppercase",marginBottom:10}}>Rounds</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+                {COUNT_PRESETS.map(n=>{
+                  const active = settings.count === n;
+                  return (
+                    <button key={n} onClick={()=>updateSettings({count:n})} style={{
+                      flex:"1 0 auto",minWidth:38,padding:"8px 10px",
+                      background: active ? `${orb.glow}33` : "rgba(255,255,255,0.03)",
+                      border:`1px solid ${active ? orb.color+"80" : "rgba(180,140,255,0.15)"}`,
+                      borderRadius:10, color: active ? orb.color : "#8A7AA8",
+                      fontSize:11, letterSpacing:2, cursor:"pointer",
+                      fontFamily:"inherit"
+                    }}>×{n}</button>
+                  );
+                })}
+              </div>
+
+              <div style={{fontSize:9,letterSpacing:3,color:"#6A5A8A",textTransform:"uppercase",marginBottom:10}}>Ambience</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {AMBIENCE_PRESETS.map(a=>{
+                  const active = settings.ambience === a.id;
+                  return (
+                    <button key={a.id} onClick={()=>updateSettings({ambience:a.id})} style={{
+                      flex:"1 0 auto",minWidth:80,padding:"8px 10px",
+                      background: active ? `${orb.glow}33` : "rgba(255,255,255,0.03)",
+                      border:`1px solid ${active ? orb.color+"80" : "rgba(180,140,255,0.15)"}`,
+                      borderRadius:10, color: active ? orb.color : "#8A7AA8",
+                      fontSize:10, letterSpacing:2, cursor:"pointer",
+                      fontFamily:"inherit", textTransform:"uppercase"
+                    }}>{a.label}</button>
+                  );
+                })}
+              </div>
+
+              <div style={{marginTop:12,fontSize:11,color:"#6A5A8A",textAlign:"center",fontStyle:"italic"}}>
+                {settings.count} × {formatSeconds(settings.length)} · {Math.round(settings.count*settings.length/60)} min total
+              </div>
+            </div>
+
             {/* Begin */}
             <button onClick={()=>{resetSession();setScreen("session");}} style={{
               display:"block",width:"100%",padding:"16px",
@@ -703,7 +1123,7 @@ export default function ZenKeeper() {
         {screen==="session" && (
           <div style={{padding:"40px 24px",textAlign:"center",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
             <div style={{fontSize:10,letterSpacing:4,color:"#3A2A5A",textTransform:"uppercase",marginBottom:32}}>
-              Round {roundIdx+1} of {ROUNDS.length} · {ROUNDS[roundIdx]}s
+              Round {roundIdx+1} of {effectiveRounds.length} · {formatSeconds(effectiveRounds[roundIdx])}
             </div>
 
             {/* Session orb with timer ring */}
@@ -730,8 +1150,11 @@ export default function ZenKeeper() {
                 </div>
               )}
               {timerActive && (
-                <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:2}}>
                   <div style={{fontSize:11,color:`${orb.color}88`,letterSpacing:2}}>watch</div>
+                  <div style={{fontSize:10,color:`${orb.color}55`,letterSpacing:2,fontVariantNumeric:"tabular-nums"}}>
+                    {formatSeconds(timeLeft)}
+                  </div>
                 </div>
               )}
             </div>
@@ -757,6 +1180,49 @@ export default function ZenKeeper() {
                 <button onClick={()=>{resetSession();setScreen("home");}} style={navBtn("#44444444","#888888")}>← Back</button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── CEREMONY (orb level-up) ──────────────────────────────── */}
+        {screen==="ceremony" && ceremony && (
+          <div style={{padding:"60px 24px 40px",textAlign:"center",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <div style={{fontSize:10,letterSpacing:6,color:"#6A5A8A",textTransform:"uppercase",marginBottom:6}}>Sophia Recognizes You</div>
+            <div style={{fontSize:22,letterSpacing:3,color:"#E8D8FF",marginBottom:36,textShadow:`0 0 40px ${ceremony.to.glow}88`}}>Ascension</div>
+
+            <div style={{position:"relative",width:ceremony.to.size+80,height:ceremony.to.size+80,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:32}}>
+              {[2.2,1.7,1.3].map((r,i)=>(
+                <div key={i} style={{
+                  position:"absolute",
+                  width:ceremony.to.size*r, height:ceremony.to.size*r,
+                  borderRadius:"50%",
+                  background:`radial-gradient(circle, ${ceremony.to.glow}${[18,28,44][i]} 0%, transparent 70%)`,
+                  animation:`orbPulse ${3.5+i}s ease-in-out infinite`
+                }}/>
+              ))}
+              <div style={{
+                width:ceremony.to.size, height:ceremony.to.size, borderRadius:"50%",
+                background:`radial-gradient(circle at 38% 35%, ${ceremony.to.color}FF 0%, ${ceremony.to.color}CC 35%, ${ceremony.to.glow}AA 70%, ${ceremony.to.glow}44 100%)`,
+                boxShadow:`0 0 ${ceremony.to.size*1.1}px ${ceremony.to.glow}CC, 0 0 ${ceremony.to.size*0.4}px ${ceremony.to.color}`,
+                animation:"ceremonyEmerge 2.4s ease-out, orbFloat 4s ease-in-out 2.4s infinite"
+              }}/>
+            </div>
+
+            <div style={{fontSize:11,letterSpacing:3,color:"#5A4A7A",textTransform:"uppercase",marginBottom:4}}>{ceremony.from.name}</div>
+            <div style={{fontSize:10,color:"#4A3A6A",marginBottom:8}}>becomes</div>
+            <div style={{fontSize:18,letterSpacing:3,color:ceremony.to.color,marginBottom:24,textShadow:`0 0 20px ${ceremony.to.glow}80`}}>{ceremony.to.name}</div>
+
+            <div style={{fontSize:13,color:"#9B8FC0",fontStyle:"italic",maxWidth:320,lineHeight:1.7,marginBottom:32}}>
+              A fragment of her light has found you. Carry it gently — the work continues.
+            </div>
+
+            <button onClick={()=>{ setCeremony(null); setScreen("post"); }} style={{
+              padding:"14px 40px",
+              background:`linear-gradient(135deg,${ceremony.to.glow}55,${ceremony.to.color}22)`,
+              border:`1px solid ${ceremony.to.color}90`,borderRadius:14,
+              color:ceremony.to.color,fontSize:13,letterSpacing:4,cursor:"pointer",
+              fontFamily:"inherit",textTransform:"uppercase",
+              boxShadow:`0 0 24px ${ceremony.to.glow}55`
+            }}>Continue</button>
           </div>
         )}
 
@@ -899,6 +1365,48 @@ export default function ZenKeeper() {
         @keyframes orbPulse {
           0%,100%{opacity:0.6;transform:scale(1)}
           50%{opacity:1;transform:scale(1.06)}
+        }
+        @keyframes auroraSpin {
+          0%{transform:rotate(0deg)}
+          100%{transform:rotate(360deg)}
+        }
+        @keyframes nebBreathe {
+          0%,100%{opacity:0.55}
+          50%{opacity:1}
+        }
+        @keyframes nebDrift0 {
+          0%,100%{transform:translate(0,0) scale(1)}
+          50%{transform:translate(40px,-30px) scale(1.08)}
+        }
+        @keyframes nebDrift1 {
+          0%,100%{transform:translate(0,0) scale(1)}
+          50%{transform:translate(-50px,25px) scale(1.12)}
+        }
+        @keyframes nebDrift2 {
+          0%,100%{transform:translate(0,0) scale(1)}
+          50%{transform:translate(30px,40px) scale(0.94)}
+        }
+        @keyframes nebDrift3 {
+          0%,100%{transform:translate(0,0) scale(1)}
+          50%{transform:translate(-35px,-20px) scale(1.06)}
+        }
+        @keyframes nebDrift4 {
+          0%,100%{transform:translate(0,0) scale(1)}
+          50%{transform:translate(20px,-40px) scale(1.04)}
+        }
+        @keyframes ceremonyEmerge {
+          0%   { transform: scale(0.2); opacity: 0; filter: blur(12px); }
+          60%  { transform: scale(1.15); opacity: 1; filter: blur(0); }
+          100% { transform: scale(1); opacity: 1; filter: blur(0); }
+        }
+        @keyframes shoot {
+          0%{opacity:0;transform:translate(0,0) rotate(18deg)}
+          6%{opacity:1}
+          70%{opacity:1}
+          100%{opacity:0;transform:translate(130vw,42vh) rotate(18deg)}
+        }
+        @media (prefers-reduced-motion: reduce) {
+          *{animation-duration:0.001s !important;animation-iteration-count:1 !important}
         }
         button:focus{outline:none}
         textarea:focus{border-color:rgba(180,140,255,0.4)!important}
