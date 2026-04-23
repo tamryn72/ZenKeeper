@@ -21,20 +21,46 @@
       [1] html loaded
     </div>
     <script>
-      // Inline classic script — runs no matter what, even if modules fail.
       (function(){
         var d = document.getElementById('diag');
         function log(s){ if(d) d.textContent += '\n' + s; }
         log('[2] inline script ran');
         log('[UA] ' + (navigator.userAgent || '?').slice(0,120));
         log('[modules] ' + ('noModule' in document.createElement('script') ? 'supported' : 'NOT supported'));
+
+        // CAPTURE-phase handler — script/link element errors don't bubble to
+        // window, so the default listener misses them. Capture catches them.
         window.addEventListener('error', function(e){
-          log('[ERROR] ' + (e.message || 'unknown') + (e.filename ? ' @ ' + e.filename.split('/').slice(-1) : ''));
-        });
+          var tgt = e.target;
+          if (tgt && (tgt.tagName === 'SCRIPT' || tgt.tagName === 'LINK')) {
+            log('[RESOURCE ERROR] ' + tgt.tagName + ' ' + (tgt.src || tgt.href || '?').slice(-80));
+          } else {
+            log('[ERROR] ' + (e.message || 'unknown') + (e.filename ? ' @ ' + e.filename.split('/').slice(-1) : ''));
+          }
+        }, true);
         window.addEventListener('unhandledrejection', function(e){
           log('[REJECT] ' + ((e.reason && e.reason.message) || String(e.reason)));
         });
         window.__zkDiag = log;
+
+        // Fetch-test the current page's module scripts so we know if the
+        // bundle URL is actually reachable.
+        var scripts = document.querySelectorAll('script[type="module"][src]');
+        for (var i = 0; i < scripts.length; i++) {
+          (function(s){
+            var url = s.src;
+            log('[fetching] ' + url.split('/').slice(-1)[0]);
+            fetch(url, { method: 'GET', cache: 'no-store' })
+              .then(function(r){
+                log('[fetch] ' + r.status + ' ' + url.split('/').slice(-1)[0] + ' (ct=' + (r.headers.get('content-type') || '?') + ')');
+                return r.text();
+              })
+              .then(function(t){
+                log('[bytes] ' + t.length + ' first20=' + JSON.stringify(t.slice(0,20)));
+              })
+              .catch(function(e){ log('[fetch FAIL] ' + e.message); });
+          })(scripts[i]);
+        }
       })();
     </script>
 
