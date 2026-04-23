@@ -511,15 +511,6 @@ const STARS = Array.from({length:220},(_,i)=>{
   };
 });
 
-// Drifting nebula blobs — slow translate + opacity breathing.
-const NEBULAE = [
-  { x: 15, y: 20, size: 520, hue: "violet", dur: 46, delay: 0,  drift: 18 },
-  { x: 78, y: 30, size: 440, hue: "accent", dur: 58, delay: 8,  drift: 22 },
-  { x: 35, y: 75, size: 600, hue: "indigo", dur: 64, delay: 14, drift: 26 },
-  { x: 85, y: 82, size: 380, hue: "accent", dur: 52, delay: 22, drift: 16 },
-  { x: 50, y: 45, size: 700, hue: "deep",   dur: 72, delay: 4,  drift: 10 },
-];
-
 // Shooting stars — rare. Each runs on a 120s cycle, visible only for ~3s of it,
 // so across 2 streaks you see roughly one crossing the sky every minute or two.
 const SHOOTERS = [
@@ -1037,46 +1028,27 @@ export default function ZenKeeper() {
   return (
     <div style={{minHeight:"100vh",background:"#03040a",fontFamily:"'Palatino Linotype','Book Antiqua',Palatino,serif",color:"#E8E0FF",position:"relative",overflow:"hidden"}}>
       {/* ── COSMIC BACKGROUND ───────────────────────────────────────────────── */}
-      {/* All layers are position:absolute so the sky scrolls WITH the page
-          instead of feeling pinned under the content. */}
+      {/* Pinned to the viewport on purpose — absolute positioning made the
+          blurred aurora scale to the full scroll height on tall pages, which
+          crashed rendering on mobile GPUs (the "gone dark" bug). Keep it
+          simple: one base, one drifting wash, stars, rare shooters. */}
 
       {/* Base deep-space gradient */}
-      <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:0,
-        background:"radial-gradient(ellipse at 50% 0%, #0c0826 0%, #06061e 38%, #020410 75%, #000004 100%)"
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,
+        background:"radial-gradient(ellipse at 50% 0%, #0c0826 0%, #06061e 40%, #020308 78%, #000004 100%)"
       }}/>
 
-      {/* Slowly rotating aurora wisp (follows orb tint) */}
-      <div style={{position:"absolute",top:"-25%",left:"-25%",right:"-25%",bottom:"-25%",pointerEvents:"none",zIndex:0,opacity:0.4,
-        background:`conic-gradient(from 0deg at 50% 55%, transparent 0deg, ${orb.glow}33 60deg, transparent 130deg, ${orb.color}22 210deg, transparent 280deg, ${orb.glow}33 330deg, transparent 360deg)`,
-        filter:"blur(80px)",
-        animation:"auroraSpin 90s linear infinite"
+      {/* Soft mood wash — two radial gradients tinted by the current orb,
+          drifting slowly. No blur filter, no mix-blend-mode = no GPU tears. */}
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,opacity:0.7,
+        background:`radial-gradient(ellipse 70% 60% at 30% 30%, ${orb.glow}22 0%, transparent 65%), radial-gradient(ellipse 80% 70% at 75% 80%, ${orb.color}1A 0%, transparent 70%)`,
+        animation:"washDrift 40s ease-in-out infinite"
       }}/>
 
-      {/* Drifting nebulae — each breathes + translates on its own cycle */}
-      <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
-        {NEBULAE.map((n,i)=>{
-          const tint = n.hue==="accent" ? orb.color : n.hue==="violet" ? "#8A5CFF" : n.hue==="indigo" ? "#4464C8" : "#2A1A5A";
-          return (
-            <div key={i} style={{
-              position:"absolute",
-              left:`${n.x}%`, top:`${n.y}%`,
-              width:n.size, height:n.size,
-              marginLeft:-n.size/2, marginTop:-n.size/2,
-              borderRadius:"50%",
-              background:`radial-gradient(circle, ${tint}55 0%, ${tint}22 40%, transparent 72%)`,
-              filter:"blur(60px)",
-              mixBlendMode:"screen",
-              animation:`nebDrift${i} ${n.dur}s ease-in-out ${n.delay}s infinite, nebBreathe ${n.dur*0.6}s ease-in-out ${n.delay}s infinite`
-            }}/>
-          );
-        })}
-      </div>
-
-      {/* Starfield — CSS-animated divs so the twinkle is actually visible.
-          Each star gets its own low/high opacity range via CSS custom props. */}
-      <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+      {/* Starfield — CSS-animated divs so twinkle is actually visible. */}
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         {STARS.map((s,i)=>{
-          const glow = s.jewel ? `0 0 ${s.size*4}px ${s.tint}, 0 0 ${s.size*1.5}px ${s.tint}` : `0 0 ${s.size*1.2}px rgba(255,255,255,0.6)`;
+          const glow = s.jewel ? `0 0 ${s.size*3}px ${s.tint}` : "none";
           return (
             <div key={i} style={{
               position:"absolute",
@@ -1086,7 +1058,6 @@ export default function ZenKeeper() {
               borderRadius:"50%",
               background:s.tint,
               boxShadow:glow,
-              willChange:"opacity, transform",
               "--o-low": s.oLow,
               "--o-high": s.oHigh,
               animation:`twinkle ${s.dur}s ease-in-out ${s.delay}s infinite`,
@@ -1095,8 +1066,8 @@ export default function ZenKeeper() {
         })}
       </div>
 
-      {/* Shooting stars — rare. A diagonal flash maybe once a minute or two. */}
-      <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+      {/* Shooting stars — rare. A diagonal flash once a minute or two. */}
+      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         {SHOOTERS.map((sh,i)=>(
           <div key={i} style={{
             position:"absolute",
@@ -1106,7 +1077,6 @@ export default function ZenKeeper() {
             borderRadius:2,
             opacity:0,
             transform:"rotate(18deg)",
-            filter:"drop-shadow(0 0 6px rgba(210,220,255,0.95))",
             animation:`shoot ${sh.cycle}s linear ${sh.delay}s infinite`
           }}/>
         ))}
@@ -1523,33 +1493,9 @@ export default function ZenKeeper() {
           0%,100%{opacity:0.6;transform:scale(1)}
           50%{opacity:1;transform:scale(1.06)}
         }
-        @keyframes auroraSpin {
-          0%{transform:rotate(0deg)}
-          100%{transform:rotate(360deg)}
-        }
-        @keyframes nebBreathe {
-          0%,100%{opacity:0.55}
-          50%{opacity:1}
-        }
-        @keyframes nebDrift0 {
+        @keyframes washDrift {
           0%,100%{transform:translate(0,0) scale(1)}
-          50%{transform:translate(40px,-30px) scale(1.08)}
-        }
-        @keyframes nebDrift1 {
-          0%,100%{transform:translate(0,0) scale(1)}
-          50%{transform:translate(-50px,25px) scale(1.12)}
-        }
-        @keyframes nebDrift2 {
-          0%,100%{transform:translate(0,0) scale(1)}
-          50%{transform:translate(30px,40px) scale(0.94)}
-        }
-        @keyframes nebDrift3 {
-          0%,100%{transform:translate(0,0) scale(1)}
-          50%{transform:translate(-35px,-20px) scale(1.06)}
-        }
-        @keyframes nebDrift4 {
-          0%,100%{transform:translate(0,0) scale(1)}
-          50%{transform:translate(20px,-40px) scale(1.04)}
+          50%{transform:translate(-20px,14px) scale(1.04)}
         }
         @keyframes ceremonyEmerge {
           0%   { transform: scale(0.2); opacity: 0; filter: blur(12px); }
