@@ -403,17 +403,19 @@ function saveState(s) {
 }
 
 // ── STARS ─────────────────────────────────────────────────────────────────────
-// Three tiers: fine dust, regular twinkle, rare "jewel" stars with colored flare.
-const STAR_TINTS = ["#FFFFFF","#FFFFFF","#FFFFFF","#CFE6FF","#FFE8C8","#E8D8FF"];
-const STARS = Array.from({length:180},(_,i)=>{
+// Three tiers: dust, regular twinkle, rare "jewel" stars with a colored glow.
+const STAR_TINTS = ["#FFFFFF","#FFFFFF","#FFFFFF","#CFE6FF","#FFE8C8","#E8D8FF","#FFD6F0"];
+const STARS = Array.from({length:220},(_,i)=>{
   const tier = Math.random();
-  const jewel = tier > 0.94;
-  const big = !jewel && tier > 0.78;
+  const jewel = tier > 0.93;
+  const big   = !jewel && tier > 0.72;
   return {
-    x: Math.random()*100, y: Math.random()*100,
-    s: jewel ? Math.random()*1.2+1.8 : big ? Math.random()*1.1+1.1 : Math.random()*0.9+0.3,
-    o: jewel ? Math.random()*0.3+0.6 : big ? Math.random()*0.4+0.35 : Math.random()*0.35+0.1,
-    d: Math.random()*5+2.5,
+    x: Math.random()*100,
+    y: Math.random()*100,
+    size: jewel ? 2.4 + Math.random()*1.4 : big ? 1.6 + Math.random()*0.9 : 0.8 + Math.random()*0.9,
+    oLow:  jewel ? 0.35 : big ? 0.2 : 0.08,
+    oHigh: jewel ? 1.0  : big ? 0.85 : 0.55,
+    dur: 2 + Math.random()*4.5,
     delay: Math.random()*6,
     tint: jewel ? STAR_TINTS[Math.floor(Math.random()*STAR_TINTS.length)] : "#FFFFFF",
     jewel,
@@ -429,14 +431,12 @@ const NEBULAE = [
   { x: 50, y: 45, size: 700, hue: "deep",   dur: 72, delay: 4,  drift: 10 },
 ];
 
-// Shooting stars — staggered so one crosses every few seconds.
-const SHOOTERS = Array.from({length:6},(_,i)=>({
-  top: 5 + Math.random()*40,
-  left: -10 - Math.random()*20,
-  dur: 2.4 + Math.random()*1.6,
-  delay: i * 7 + Math.random()*4,
-  len: 90 + Math.random()*80,
-}));
+// Shooting stars — rare. Each runs on a 120s cycle, visible only for ~3s of it,
+// so across 2 streaks you see roughly one crossing the sky every minute or two.
+const SHOOTERS = [
+  { top: 8  + Math.random()*20, cycle: 120, delay: 12,  len: 120 },
+  { top: 28 + Math.random()*18, cycle: 140, delay: 72,  len: 100 },
+];
 
 // ── ARCHON CAROUSEL ───────────────────────────────────────────────────────────
 function ArchonCarousel({ onPick, orbColor, orbGlow }) {
@@ -918,20 +918,23 @@ export default function ZenKeeper() {
   return (
     <div style={{minHeight:"100vh",background:"#03040a",fontFamily:"'Palatino Linotype','Book Antiqua',Palatino,serif",color:"#E8E0FF",position:"relative",overflow:"hidden"}}>
       {/* ── COSMIC BACKGROUND ───────────────────────────────────────────────── */}
+      {/* All layers are position:absolute so the sky scrolls WITH the page
+          instead of feeling pinned under the content. */}
+
       {/* Base deep-space gradient */}
-      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,
-        background:"radial-gradient(ellipse at 50% 0%, #0a0720 0%, #05051a 38%, #020308 75%, #000004 100%)"
+      <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:0,
+        background:"radial-gradient(ellipse at 50% 0%, #0c0826 0%, #06061e 38%, #020410 75%, #000004 100%)"
       }}/>
 
-      {/* Slowly rotating aurora wisp */}
-      <div style={{position:"fixed",inset:"-25%",pointerEvents:"none",zIndex:0,opacity:0.35,
-        background:`conic-gradient(from 0deg at 50% 55%, transparent 0deg, ${orb.glow}22 60deg, transparent 120deg, ${orb.color}18 200deg, transparent 260deg, ${orb.glow}22 320deg, transparent 360deg)`,
+      {/* Slowly rotating aurora wisp (follows orb tint) */}
+      <div style={{position:"absolute",top:"-25%",left:"-25%",right:"-25%",bottom:"-25%",pointerEvents:"none",zIndex:0,opacity:0.4,
+        background:`conic-gradient(from 0deg at 50% 55%, transparent 0deg, ${orb.glow}33 60deg, transparent 130deg, ${orb.color}22 210deg, transparent 280deg, ${orb.glow}33 330deg, transparent 360deg)`,
         filter:"blur(80px)",
         animation:"auroraSpin 90s linear infinite"
       }}/>
 
       {/* Drifting nebulae — each breathes + translates on its own cycle */}
-      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+      <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         {NEBULAE.map((n,i)=>{
           const tint = n.hue==="accent" ? orb.color : n.hue==="violet" ? "#8A5CFF" : n.hue==="indigo" ? "#4464C8" : "#2A1A5A";
           return (
@@ -941,7 +944,7 @@ export default function ZenKeeper() {
               width:n.size, height:n.size,
               marginLeft:-n.size/2, marginTop:-n.size/2,
               borderRadius:"50%",
-              background:`radial-gradient(circle, ${tint}44 0%, ${tint}22 35%, transparent 70%)`,
+              background:`radial-gradient(circle, ${tint}55 0%, ${tint}22 40%, transparent 72%)`,
               filter:"blur(60px)",
               mixBlendMode:"screen",
               animation:`nebDrift${i} ${n.dur}s ease-in-out ${n.delay}s infinite, nebBreathe ${n.dur*0.6}s ease-in-out ${n.delay}s infinite`
@@ -950,46 +953,42 @@ export default function ZenKeeper() {
         })}
       </div>
 
-      {/* Stars — twinkling, with occasional colored jewel stars */}
-      <svg style={{position:"fixed",inset:0,width:"100%",height:"100%",pointerEvents:"none",zIndex:0}} preserveAspectRatio="xMidYMid slice">
-        <defs>
-          <radialGradient id="jewelGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="white" stopOpacity="1"/>
-            <stop offset="40%" stopColor="white" stopOpacity="0.6"/>
-            <stop offset="100%" stopColor="white" stopOpacity="0"/>
-          </radialGradient>
-        </defs>
-        {STARS.map((s,i)=>(
-          s.jewel ? (
-            <g key={i}>
-              <circle cx={`${s.x}%`} cy={`${s.y}%`} r={s.s*3} fill="url(#jewelGlow)" opacity={s.o*0.5}>
-                <animate attributeName="opacity" values={`${s.o*0.3};${s.o*0.7};${s.o*0.3}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
-              </circle>
-              <circle cx={`${s.x}%`} cy={`${s.y}%`} r={s.s} fill={s.tint} opacity={s.o}>
-                <animate attributeName="opacity" values={`${s.o};${Math.min(s.o+0.35,1)};${s.o}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
-              </circle>
-            </g>
-          ) : (
-            <circle key={i} cx={`${s.x}%`} cy={`${s.y}%`} r={s.s} fill={s.tint} opacity={s.o}>
-              <animate attributeName="opacity" values={`${s.o};${Math.min(s.o+0.35,0.95)};${s.o}`} dur={`${s.d}s`} begin={`${s.delay}s`} repeatCount="indefinite"/>
-            </circle>
-          )
-        ))}
-      </svg>
+      {/* Starfield — CSS-animated divs so the twinkle is actually visible.
+          Each star gets its own low/high opacity range via CSS custom props. */}
+      <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+        {STARS.map((s,i)=>{
+          const glow = s.jewel ? `0 0 ${s.size*4}px ${s.tint}, 0 0 ${s.size*1.5}px ${s.tint}` : `0 0 ${s.size*1.2}px rgba(255,255,255,0.6)`;
+          return (
+            <div key={i} style={{
+              position:"absolute",
+              left:`${s.x}%`, top:`${s.y}%`,
+              width:s.size*2, height:s.size*2,
+              marginLeft:-s.size, marginTop:-s.size,
+              borderRadius:"50%",
+              background:s.tint,
+              boxShadow:glow,
+              willChange:"opacity, transform",
+              "--o-low": s.oLow,
+              "--o-high": s.oHigh,
+              animation:`twinkle ${s.dur}s ease-in-out ${s.delay}s infinite`,
+            }}/>
+          );
+        })}
+      </div>
 
-      {/* Shooting stars — diagonal streaks that cross the sky periodically */}
-      <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+      {/* Shooting stars — rare. A diagonal flash maybe once a minute or two. */}
+      <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
         {SHOOTERS.map((sh,i)=>(
           <div key={i} style={{
             position:"absolute",
-            top:`${sh.top}%`, left:`${sh.left}%`,
+            top:`${sh.top}%`, left:"-15%",
             width:sh.len, height:1.5,
-            background:"linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.9) 60%, #FFFFFF 100%)",
+            background:"linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.9) 55%, #FFFFFF 100%)",
             borderRadius:2,
             opacity:0,
             transform:"rotate(18deg)",
-            filter:"drop-shadow(0 0 6px rgba(200,220,255,0.9))",
-            animation:`shoot ${sh.dur}s ease-in ${sh.delay}s infinite`
+            filter:"drop-shadow(0 0 6px rgba(210,220,255,0.95))",
+            animation:`shoot ${sh.cycle}s linear ${sh.delay}s infinite`
           }}/>
         ))}
       </div>
@@ -1399,11 +1398,18 @@ export default function ZenKeeper() {
           60%  { transform: scale(1.15); opacity: 1; filter: blur(0); }
           100% { transform: scale(1); opacity: 1; filter: blur(0); }
         }
+        @keyframes twinkle {
+          0%, 100% { opacity: var(--o-low,0.2);  transform: scale(0.75); }
+          50%      { opacity: var(--o-high,0.9); transform: scale(1.25); }
+        }
+        /* Shoot runs across a long cycle; visible only in the opening sliver so
+           streaks are rare. The streak itself covers ~2% of the cycle. */
         @keyframes shoot {
-          0%{opacity:0;transform:translate(0,0) rotate(18deg)}
-          6%{opacity:1}
-          70%{opacity:1}
-          100%{opacity:0;transform:translate(130vw,42vh) rotate(18deg)}
+          0%   { opacity: 0; transform: translate(0,0) rotate(18deg); }
+          0.5% { opacity: 1; }
+          2.5% { opacity: 1; transform: translate(130vw,40vh) rotate(18deg); }
+          3%   { opacity: 0; transform: translate(130vw,40vh) rotate(18deg); }
+          100% { opacity: 0; transform: translate(130vw,40vh) rotate(18deg); }
         }
         @media (prefers-reduced-motion: reduce) {
           *{animation-duration:0.001s !important;animation-iteration-count:1 !important}
