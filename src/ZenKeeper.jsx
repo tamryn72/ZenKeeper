@@ -429,14 +429,12 @@ const NEBULAE = [
   { x: 50, y: 45, size: 700, hue: "deep",   dur: 72, delay: 4,  drift: 10 },
 ];
 
-// Shooting stars — staggered so one crosses every few seconds.
-const SHOOTERS = Array.from({length:6},(_,i)=>({
-  top: 5 + Math.random()*40,
-  left: -10 - Math.random()*20,
-  dur: 2.4 + Math.random()*1.6,
-  delay: i * 7 + Math.random()*4,
-  len: 90 + Math.random()*80,
-}));
+// Shooting stars — rare. Each runs on a ~2min cycle, visible for only ~3s of
+// it, so one crosses the sky roughly every minute or two.
+const SHOOTERS = [
+  { top: 8  + Math.random()*20, left: -10, cycle: 120, delay: 10, len: 120 },
+  { top: 28 + Math.random()*18, left: -10, cycle: 140, delay: 72, len: 100 },
+];
 
 // ── ARCHON CAROUSEL ───────────────────────────────────────────────────────────
 function ArchonCarousel({ onPick, orbColor, orbGlow }) {
@@ -989,7 +987,7 @@ export default function ZenKeeper() {
             opacity:0,
             transform:"rotate(18deg)",
             filter:"drop-shadow(0 0 6px rgba(200,220,255,0.9))",
-            animation:`shoot ${sh.dur}s ease-in ${sh.delay}s infinite`
+            animation:`shoot ${sh.cycle}s linear ${sh.delay}s infinite`
           }}/>
         ))}
       </div>
@@ -1399,11 +1397,14 @@ export default function ZenKeeper() {
           60%  { transform: scale(1.15); opacity: 1; filter: blur(0); }
           100% { transform: scale(1); opacity: 1; filter: blur(0); }
         }
+        /* shoot: streak is visible only for ~3s of each 2min cycle so the sky
+           looks calm most of the time and a shooter arrives now and then. */
         @keyframes shoot {
-          0%{opacity:0;transform:translate(0,0) rotate(18deg)}
-          6%{opacity:1}
-          70%{opacity:1}
-          100%{opacity:0;transform:translate(130vw,42vh) rotate(18deg)}
+          0%   { opacity: 0; transform: translate(0,0) rotate(18deg); }
+          1%   { opacity: 1; }
+          2.5% { opacity: 1; transform: translate(130vw,42vh) rotate(18deg); }
+          3%   { opacity: 0; transform: translate(130vw,42vh) rotate(18deg); }
+          100% { opacity: 0; transform: translate(130vw,42vh) rotate(18deg); }
         }
         @media (prefers-reduced-motion: reduce) {
           *{animation-duration:0.001s !important;animation-iteration-count:1 !important}
