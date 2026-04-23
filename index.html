@@ -13,6 +13,31 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Diagnostic: always-visible status line. Shows what stage loading is at.
+         React will overwrite #root on mount; if it doesn't, this stays visible
+         and tells us where things died. -->
+    <div id="diag" style="position:fixed;top:0;left:0;right:0;padding:10px 14px;font-family:monospace;font-size:12px;color:#8A7AA8;background:rgba(10,0,20,0.9);border-bottom:1px solid rgba(180,140,255,0.25);z-index:99999;white-space:pre-wrap;word-break:break-word;">
+      [1] html loaded
+    </div>
+    <script>
+      // Inline classic script — runs no matter what, even if modules fail.
+      (function(){
+        var d = document.getElementById('diag');
+        function log(s){ if(d) d.textContent += '\n' + s; }
+        log('[2] inline script ran');
+        log('[UA] ' + (navigator.userAgent || '?').slice(0,120));
+        log('[modules] ' + ('noModule' in document.createElement('script') ? 'supported' : 'NOT supported'));
+        window.addEventListener('error', function(e){
+          log('[ERROR] ' + (e.message || 'unknown') + (e.filename ? ' @ ' + e.filename.split('/').slice(-1) : ''));
+        });
+        window.addEventListener('unhandledrejection', function(e){
+          log('[REJECT] ' + ((e.reason && e.reason.message) || String(e.reason)));
+        });
+        window.__zkDiag = log;
+      })();
+    </script>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
