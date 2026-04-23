@@ -7,9 +7,3 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <ZenKeeper />
   </React.StrictMode>
 );
-
-// React mounted successfully — remove the HTML loading/error fallback.
-requestAnimationFrame(() => {
-  const fb = document.getElementById("fallback");
-  if (fb) fb.remove();
-});
