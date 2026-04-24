@@ -3,6 +3,9 @@ Self improvement game based on gnostic principals
 
 Practice watching your thoughts and identifying which archon monster is harassing you! 
 
+Try it here
+https://tamryn72.github.io/ZenKeeper/
+
 # Zen Keeper: Sophia's Light
 
 > *"They are not exactly enemies. They are ancient programs doing exactly what they were designed to do- keep you fully immersed in the system. Your only job is to notice them."*
