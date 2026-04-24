@@ -876,13 +876,14 @@ function ceremonyTone() {
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ZenKeeper() {
   const [store, setStore] = useState(() => loadState());
-  const [screen, setScreen] = useState("home"); // home | setup | sit | post | ceremony | archons | journal | addDownload
+  const [screen, setScreen] = useState("home"); // home | setup | prompt | sit | post | ceremony | archons | journal | addDownload
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [sitDuration, setSitDuration] = useState(0);
   const [caughtArchons, setCaughtArchons] = useState([]);
   const [sitInsights, setSitInsights] = useState([]);
   const [pauseMode, setPauseMode] = useState(null); // null | "archon" | "insight"
+  const [promptShowArchons, setPromptShowArchons] = useState(false);
   const [insightDraft, setInsightDraft] = useState("");
   const [downloadText, setDownloadText] = useState("");
   const [orbPulse, setOrbPulse] = useState(false);
@@ -960,9 +961,22 @@ export default function ZenKeeper() {
     resetSit();
     setSitDuration(d);
     setTimeLeft(d);
+    setScreen("prompt");
+  }
+
+  function startSitTimer() {
     setTimerActive(true);
     setScreen("sit");
     startAmbienceIfNeeded();
+  }
+
+  function promptTagArchon(archon) {
+    setCaughtArchons([{ name: archon.name, atSec: 0, when: Date.now() }]);
+    const counts = {...(store.archonCounts||{})};
+    counts[archon.name] = (counts[archon.name]||0)+1;
+    persist({...store, archonCounts:counts});
+    setPromptShowArchons(false);
+    startSitTimer();
   }
 
   function tagArchon(archon) {
@@ -1052,6 +1066,7 @@ export default function ZenKeeper() {
     setPauseMode(null);
     setInsightDraft("");
     setSitLight(0);
+    setPromptShowArchons(false);
   }
 
   function updateSettings(patch) {
@@ -1278,6 +1293,38 @@ export default function ZenKeeper() {
               padding:"10px 20px",background:"none",border:"none",color:"#7A6A9A",
               fontSize:11,letterSpacing:3,cursor:"pointer",fontFamily:"inherit",textTransform:"uppercase"
             }}>← Back</button>
+          </div>
+        )}
+
+        {/* ── PROMPT (pre-sit watching exercise) ────────────────────── */}
+        {screen==="prompt" && (
+          <div style={{padding:"40px 24px",textAlign:"center",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <div style={{fontSize:10,letterSpacing:5,color:"#5A4A7A",textTransform:"uppercase",marginBottom:18}}>Before the Sit</div>
+
+            <div style={{fontSize:17,color:"#E8D8FF",fontStyle:"italic",maxWidth:360,lineHeight:1.7,marginBottom:36,textShadow:`0 0 24px ${orb.glow}55`}}>
+              Wait and watch: what is your next thought?{" "}
+            </div>
+
+            {!promptShowArchons ? (
+              <>
+                <div style={{fontSize:11,color:"#6A5A8A",fontStyle:"italic",maxWidth:320,lineHeight:1.7,marginBottom:26}}>
+                  If it pulls you in — mark the archon. If you notice and release it — that's success. Then go to the sit.
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:10,width:"100%",maxWidth:320,marginBottom:10}}>
+                  <button onClick={()=>setPromptShowArchons(true)} style={sitActionBtn(orb.color, orb.glow)}>◉ Pulled in — mark archon</button>
+                  <button onClick={startSitTimer} style={sitActionBtn(orb.color, orb.glow)}>✓ Released — continue to sit</button>
+                </div>
+                <button onClick={()=>{ resetSit(); setScreen("setup"); }} style={{marginTop:18,padding:"10px 20px",background:"none",border:"none",color:"#7A6A9A",fontSize:11,letterSpacing:3,cursor:"pointer",fontFamily:"inherit",textTransform:"uppercase"}}>← Back</button>
+              </>
+            ) : (
+              <div style={{width:"100%",maxWidth:420,background:"rgba(10,8,26,0.6)",border:"1px solid rgba(180,140,255,0.2)",borderRadius:16,padding:"14px 10px",backdropFilter:"blur(8px)"}}>
+                <div style={{fontSize:10,letterSpacing:3,color:"#8A7AA8",textTransform:"uppercase",marginBottom:10}}>Which one pulled you?</div>
+                <ArchonGrid onPick={promptTagArchon}/>
+                <button onClick={()=>setPromptShowArchons(false)} style={{marginTop:10,background:"none",border:"none",color:"#6A5A8A",fontSize:11,letterSpacing:2,cursor:"pointer",fontFamily:"inherit"}}>
+                  ← back
+                </button>
+              </div>
+            )}
           </div>
         )}
 
