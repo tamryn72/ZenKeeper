@@ -1702,7 +1702,7 @@ export default function ZenKeeper() {
 
           const cardStyle = { background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, padding:"10px 6px", textAlign:"center" };
           const sectionLabel = { fontSize:9, letterSpacing:3, color:"#5A4A7A", textTransform:"uppercase", marginBottom:10, marginTop:28 };
-          const dimLabel = { fontSize:9, letterSpacing:2, color:"#4A3A6A", textTransform:"uppercase", marginTop:3 };
+          const dimLabel = { fontSize:9, letterSpacing:2, color:"#9B8FC0", textTransform:"uppercase", marginTop:4 };
 
           const renderStat = (label, val, color) => (
             <div style={cardStyle} key={label}>
