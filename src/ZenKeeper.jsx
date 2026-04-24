@@ -648,6 +648,53 @@ function ArchonCarousel({ onPick, orbColor, orbGlow }) {
   );
 }
 
+// Fast picker for mid-sit: all 12 archons at once, tap the one that pulled
+// you. Shows a tiny icon + name + 1-2 word descriptor so the user can
+// identify the archon without reading paragraphs. One tap instead of swipes.
+function ArchonGrid({ onPick }) {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(3, 1fr)",
+      gap: 8,
+      padding: "4px",
+    }}>
+      {ARCHONS.map(a => (
+        <button
+          key={a.id}
+          onClick={() => onPick(a)}
+          style={{
+            background: `${a.glow}14`,
+            border: `1px solid ${a.color}55`,
+            borderRadius: 12,
+            padding: "10px 6px 8px",
+            color: a.color,
+            fontFamily: "'Palatino Linotype','Book Antiqua',Palatino,serif",
+            cursor: "pointer",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 4,
+            textAlign: "center",
+            minHeight: 104,
+            boxShadow: `0 0 10px ${a.glow}22`,
+          }}
+        >
+          <div style={{ transform: "scale(0.62)", margin: "-10px 0 -6px", lineHeight: 0 }}>
+            {a.render()}
+          </div>
+          <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", lineHeight: 1.1 }}>
+            {a.name}
+          </div>
+          <div style={{ fontSize: 9, color: "#9B8FC0", lineHeight: 1.2, opacity: 0.85 }}>
+            {a.program}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── AMBIENT SOUND SYNTHESIS ───────────────────────────────────────────────────
 // Each preset returns a stop() function. Sounds are fully synthesized via Web
 // Audio so no external files are needed.
@@ -1288,9 +1335,9 @@ export default function ZenKeeper() {
 
             {/* Pause overlay — archon picker */}
             {pauseMode === "archon" && (
-              <div style={{width:"100%",maxWidth:420,background:"rgba(10,8,26,0.6)",border:"1px solid rgba(180,140,255,0.2)",borderRadius:16,padding:"16px 8px",backdropFilter:"blur(8px)"}}>
-                <div style={{fontSize:10,letterSpacing:3,color:"#8A7AA8",textTransform:"uppercase",marginBottom:8}}>Which one?</div>
-                <ArchonCarousel onPick={tagArchon} orbColor={orb.color} orbGlow={orb.glow}/>
+              <div style={{width:"100%",maxWidth:420,background:"rgba(10,8,26,0.6)",border:"1px solid rgba(180,140,255,0.2)",borderRadius:16,padding:"14px 10px",backdropFilter:"blur(8px)"}}>
+                <div style={{fontSize:10,letterSpacing:3,color:"#8A7AA8",textTransform:"uppercase",marginBottom:10}}>Which one?</div>
+                <ArchonGrid onPick={tagArchon}/>
                 <button onClick={closePause} style={{marginTop:10,background:"none",border:"none",color:"#6A5A8A",fontSize:11,letterSpacing:2,cursor:"pointer",fontFamily:"inherit"}}>
                   skip — back to sitting
                 </button>
