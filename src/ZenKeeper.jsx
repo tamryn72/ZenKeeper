@@ -357,6 +357,15 @@ function formatClock(s) {
   return `${m}:${sec.toString().padStart(2,"0")}`;
 }
 
+function formatHuman(s) {
+  if (!s) return "0m";
+  if (s < 60) return `${Math.round(s)}s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h >= 1) return m ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
+}
+
 // Dial math — 300° arc from -150° to +150°, log-scaled so short sits get
 // fine granularity and long sits jump in bigger steps.
 const DIAL_SWEEP = 300;
@@ -876,7 +885,7 @@ function ceremonyTone() {
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ZenKeeper() {
   const [store, setStore] = useState(() => loadState());
-  const [screen, setScreen] = useState("home"); // home | setup | prompt | sit | post | ceremony | archons | journal | addDownload
+  const [screen, setScreen] = useState("home"); // home | setup | prompt | sit | post | ceremony | archons | journal | journey | addDownload
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [sitDuration, setSitDuration] = useState(0);
@@ -895,11 +904,44 @@ export default function ZenKeeper() {
   const settings = store.settings || DEFAULT_SETTINGS;
   const orb = getOrbLevel(store.totalLight);
 
-  // nemesis
-  const nemesis = Object.entries(store.archonCounts||{})
-    .sort((a,b)=>b[1]-a[1])[0];
-
   function persist(newStore) { setStore(newStore); saveState(newStore); }
+
+  const importFileRef = useRef(null);
+  function exportData() {
+    try {
+      const blob = new Blob([JSON.stringify(store, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const stamp = new Date().toISOString().slice(0,10);
+      a.href = url;
+      a.download = `zenkeeper-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) { alert("Export failed"); }
+  }
+  function importDataFile(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (typeof data !== "object" || !data) throw new Error("bad shape");
+        if (!confirm("Replace all current data with the imported file? This cannot be undone.")) return;
+        persist(data);
+      } catch (err) {
+        alert("That file doesn't look like a valid Zen Keeper export.");
+      }
+    };
+    reader.readAsText(file);
+  }
+  function resetArchonCounts() {
+    if (!confirm("Reset all archon counts to zero? (Session history is kept.)")) return;
+    persist({ ...store, archonCounts: {} });
+  }
 
   // ── Timer — pauseMode halts countdown so mid-sit tagging/insight capture
   //    doesn't eat real sit-time. Bell dings only when the full chosen
@@ -1199,12 +1241,6 @@ export default function ZenKeeper() {
               ))}
             </div>
 
-            {nemesis && (
-              <div style={{textAlign:"center",marginBottom:20,fontSize:12,color:"#6A5A8A",fontStyle:"italic"}}>
-                Your nemesis: <span style={{color:orb.color}}>{nemesis[0]}</span> — visited {nemesis[1]} time{nemesis[1]!==1?"s":""}
-              </div>
-            )}
-
             {/* Begin — goes to Setup where the dial + ambience live */}
             <button onClick={()=>setScreen("setup")} style={{
               display:"block",width:"100%",padding:"18px",
@@ -1215,7 +1251,8 @@ export default function ZenKeeper() {
               boxShadow:`0 0 20px ${orb.glow}33`,marginBottom:12
             }}>Begin Sit</button>
 
-            <div style={{display:"flex",gap:10}}>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setScreen("journey")} style={navBtn("#FFB77044","#FFB770")}>Journey</button>
               <button onClick={()=>setScreen("archons")} style={navBtn("#AA88FF44","#AA88FF")}>The Archons</button>
               <button onClick={()=>setScreen("journal")} style={navBtn("#88CCFF44","#88CCFF")}>Downloads</button>
             </div>
@@ -1346,10 +1383,15 @@ export default function ZenKeeper() {
                   <button onClick={()=>openPause("archon")} style={sitActionBtn(orb.color, orb.glow)}>◉ Archon</button>
                   <button onClick={()=>openPause("insight")} style={sitActionBtn(orb.color, orb.glow)}>✦ Insight</button>
                 </div>
-                <div style={{fontSize:10,color:"#5A4A7A",letterSpacing:2,textTransform:"uppercase",marginBottom:10}}>
+                <div style={{fontSize:10,color:"#5A4A7A",letterSpacing:2,textTransform:"uppercase",marginBottom:18}}>
                   Caught: {caughtArchons.length} · Insights: {sitInsights.length}
                 </div>
-                <button onClick={()=>endSit(true)} style={navBtn("#FF885544","#FF8855")}>End Sit Early</button>
+                <button onClick={()=>endSit(true)} style={{
+                  padding:"8px 18px",background:"transparent",
+                  border:"1px solid rgba(180,140,255,0.18)",borderRadius:999,
+                  color:"#7A6A9A",fontSize:9,letterSpacing:3,cursor:"pointer",
+                  fontFamily:"inherit",textTransform:"uppercase",opacity:0.8,
+                }}>End Sit Early</button>
               </>
             )}
 
@@ -1559,12 +1601,302 @@ export default function ZenKeeper() {
           </div>
         )}
 
+        {/* ── JOURNEY (progress & personal stats) ────────────────────── */}
+        {screen==="journey" && (() => {
+          const sessions = store.sessions || [];
+          const now = new Date();
+          const dayMs = 86400000;
+          const dk = d => {
+            const x = new Date(d);
+            return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;
+          };
+          const totalSits = sessions.length;
+          const totalSec = sessions.reduce((a, s) => a + (s.duration || 0), 0);
+          const avgSec = totalSits ? Math.round(totalSec / totalSits) : 0;
+          const completed = sessions.filter(s => !s.early).length;
+          const completedPct = totalSits ? Math.round((completed / totalSits) * 100) : 0;
+          const totalInsights = sessions.reduce((a,s)=>a+(s.archons?0:0),0); // placeholder, recompute below
+          const insightsAll = (store.downloads||[]).length;
+
+          // streak (consecutive days ending today or yesterday)
+          const daySet = new Set(sessions.map(s => dk(s.date)));
+          const todayKey = dk(now);
+          const ydayKey = dk(new Date(now.getTime() - dayMs));
+          const streakStart = daySet.has(todayKey) ? now : (daySet.has(ydayKey) ? new Date(now.getTime()-dayMs) : null);
+          let streak = 0;
+          if (streakStart) {
+            let cur = new Date(streakStart);
+            while (daySet.has(dk(cur))) { streak++; cur = new Date(cur.getTime()-dayMs); }
+          }
+
+          // longest streak
+          const sortedDays = [...daySet].sort();
+          let longest = 0, curRun = 0, prevDay = null;
+          for (const d of sortedDays) {
+            if (prevDay) {
+              const diff = Math.round((new Date(d)-new Date(prevDay))/dayMs);
+              curRun = diff === 1 ? curRun+1 : 1;
+            } else curRun = 1;
+            longest = Math.max(longest, curRun);
+            prevDay = d;
+          }
+
+          const firstSit = sessions[0] ? new Date(sessions[0].date) : null;
+
+          // week deltas
+          const weekAgo = now.getTime() - 7*dayMs;
+          const twoWeeksAgo = now.getTime() - 14*dayMs;
+          const thisWeek = sessions.filter(s => new Date(s.date).getTime() >= weekAgo);
+          const lastWeek = sessions.filter(s => { const t=new Date(s.date).getTime(); return t>=twoWeeksAgo && t<weekAgo; });
+          const avgOf = arr => arr.length ? Math.round(arr.reduce((a,s)=>a+(s.duration||0),0)/arr.length) : 0;
+
+          // 30-day sparkline
+          const dayCounts = {};
+          sessions.forEach(s => { const k = dk(s.date); dayCounts[k] = (dayCounts[k]||0)+1; });
+          const last30 = [];
+          for (let i = 29; i >= 0; i--) {
+            const d = new Date(now.getTime() - i*dayMs);
+            last30.push({ day: dk(d), count: dayCounts[dk(d)]||0 });
+          }
+          const maxDayCount = Math.max(1, ...last30.map(d => d.count));
+
+          // hour distribution
+          const hours = Array(24).fill(0);
+          sessions.forEach(s => { const h = new Date(s.date).getHours(); hours[h]++; });
+          const maxHour = Math.max(1, ...hours);
+
+          // archon roster (sorted by lifetime count, vanquished if 0 in last 20 sits AND >=20 total)
+          const last20 = sessions.slice(-20);
+          const inLast20 = new Set();
+          last20.forEach(s => (s.archons||[]).forEach(a => inLast20.add(a)));
+          const archonList = ARCHONS.map(a => {
+            let lastSeenIdx = -1;
+            for (let i = sessions.length-1; i >= 0; i--) {
+              if ((sessions[i].archons||[]).includes(a.name)) { lastSeenIdx = i; break; }
+            }
+            return {
+              ...a,
+              count: (store.archonCounts||{})[a.name] || 0,
+              vanquished: totalSits >= 20 && !inLast20.has(a.name),
+              lastSeenAgo: lastSeenIdx >= 0 ? totalSits - 1 - lastSeenIdx : null,
+            };
+          }).sort((x,y) => y.count - x.count);
+
+          // climate — last 14 vs prior 14
+          const fortnight = now.getTime() - 14*dayMs;
+          const month = now.getTime() - 28*dayMs;
+          const recentCounts = {}, olderCounts = {};
+          sessions.forEach(s => {
+            const t = new Date(s.date).getTime();
+            const bucket = t >= fortnight ? recentCounts : (t >= month ? olderCounts : null);
+            if (!bucket) return;
+            (s.archons||[]).forEach(a => { bucket[a] = (bucket[a]||0)+1; });
+          });
+          const climate = [...new Set([...Object.keys(recentCounts), ...Object.keys(olderCounts)])].map(name => {
+            const ar = ARCHONS.find(a => a.name === name);
+            if (!ar) return null;
+            return { archon: ar, delta: (recentCounts[name]||0) - (olderCounts[name]||0), now: recentCounts[name]||0, then: olderCounts[name]||0 };
+          }).filter(Boolean);
+          const rising = climate.filter(c => c.delta > 0).sort((a,b) => b.delta - a.delta).slice(0,3);
+          const fading = climate.filter(c => c.delta < 0).sort((a,b) => a.delta - b.delta).slice(0,3);
+
+          const cardStyle = { background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, padding:"10px 6px", textAlign:"center" };
+          const sectionLabel = { fontSize:9, letterSpacing:3, color:"#5A4A7A", textTransform:"uppercase", marginBottom:10, marginTop:28 };
+          const dimLabel = { fontSize:9, letterSpacing:2, color:"#4A3A6A", textTransform:"uppercase", marginTop:3 };
+
+          const renderStat = (label, val, color) => (
+            <div style={cardStyle} key={label}>
+              <div style={{fontSize:18,color,fontWeight:"bold",lineHeight:1.1}}>{val}</div>
+              <div style={dimLabel}>{label}</div>
+            </div>
+          );
+
+          const renderDelta = (now, prev, suffix="") => {
+            const d = now - prev;
+            if (prev === 0 && now === 0) return <span style={{color:"#5A4A7A"}}>—</span>;
+            if (d === 0) return <span style={{color:"#7A6A9A"}}>no change</span>;
+            const up = d > 0;
+            return <span style={{color: up ? "#88DDAA" : "#FF9988"}}>{up ? "▲" : "▼"} {Math.abs(d)}{suffix}</span>;
+          };
+
+          return (
+            <div style={{padding:"28px 20px 60px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+                <button onClick={()=>setScreen("home")} style={{background:"none",border:"none",color:"#7A6A9A",fontSize:20,cursor:"pointer",padding:0}}>←</button>
+                <div>
+                  <div style={{fontSize:10,letterSpacing:4,color:"#5A4A7A",textTransform:"uppercase"}}>Your Path</div>
+                  <div style={{fontSize:20,fontWeight:"normal",color:"#E8D8FF",letterSpacing:1}}>Journey</div>
+                </div>
+              </div>
+
+              {totalSits === 0 ? (
+                <div style={{textAlign:"center",color:"#3A2A5A",fontStyle:"italic",marginTop:60,fontSize:14,lineHeight:1.7}}>
+                  No sits yet.<br/>Your journey begins with the first breath.
+                </div>
+              ) : (
+                <>
+                  {/* Top numbers */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:8}}>
+                    {renderStat("Total Sits", totalSits, orb.color)}
+                    {renderStat("Total Time", formatHuman(totalSec), orb.color)}
+                    {renderStat("Streak", streak ? `${streak}d` : "—", orb.color)}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                    {renderStat("Avg Sit", formatHuman(avgSec), "#9B8FC0")}
+                    {renderStat("Longest", longest ? `${longest}d` : "—", "#9B8FC0")}
+                    {renderStat("Completed", `${completedPct}%`, "#9B8FC0")}
+                  </div>
+
+                  {firstSit && (
+                    <div style={{textAlign:"center",marginTop:14,fontSize:12,color:"#6A5A8A",fontStyle:"italic"}}>
+                      Sitting since {firstSit.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}
+                    </div>
+                  )}
+
+                  {/* Week-over-week */}
+                  <div style={sectionLabel}>This Week vs Last</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,fontSize:11}}>
+                    <div style={cardStyle}>
+                      <div style={{color:"#E8D8FF",fontSize:16,lineHeight:1.2}}>{thisWeek.length}</div>
+                      <div style={{fontSize:9,color:"#6A5A8A",marginTop:2}}>sits · {renderDelta(thisWeek.length, lastWeek.length)}</div>
+                    </div>
+                    <div style={cardStyle}>
+                      <div style={{color:"#E8D8FF",fontSize:16,lineHeight:1.2}}>{formatHuman(avgOf(thisWeek))}</div>
+                      <div style={{fontSize:9,color:"#6A5A8A",marginTop:2}}>avg · {renderDelta(avgOf(thisWeek), avgOf(lastWeek), "s")}</div>
+                    </div>
+                    <div style={cardStyle}>
+                      <div style={{color:"#E8D8FF",fontSize:16,lineHeight:1.2}}>{thisWeek.reduce((a,s)=>a+((s.archons||[]).length),0)}</div>
+                      <div style={{fontSize:9,color:"#6A5A8A",marginTop:2}}>archons · {renderDelta(
+                        thisWeek.reduce((a,s)=>a+((s.archons||[]).length),0),
+                        lastWeek.reduce((a,s)=>a+((s.archons||[]).length),0))}</div>
+                    </div>
+                  </div>
+
+                  {/* 30-day sparkline */}
+                  <div style={sectionLabel}>Last 30 Days</div>
+                  <div style={{display:"flex",gap:2,alignItems:"flex-end",height:56,padding:"6px 8px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10}}>
+                    {last30.map((d,i) => {
+                      const h = d.count ? 6 + (d.count/maxDayCount)*36 : 2;
+                      const isToday = d.day === todayKey;
+                      return (
+                        <div key={d.day} title={`${d.day}: ${d.count} sit${d.count===1?"":"s"}`} style={{
+                          flex:1,height:h,borderRadius:2,
+                          background: d.count ? (isToday ? orb.color : `${orb.color}AA`) : "rgba(255,255,255,0.06)",
+                          boxShadow: d.count && isToday ? `0 0 8px ${orb.glow}88` : "none",
+                        }}/>
+                      );
+                    })}
+                  </div>
+
+                  {/* Hour distribution */}
+                  <div style={sectionLabel}>When You Sit</div>
+                  <div style={{padding:"10px 8px 6px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10}}>
+                    <div style={{display:"flex",gap:1,alignItems:"flex-end",height:40}}>
+                      {hours.map((c,h) => {
+                        const size = c ? 4 + (c/maxHour)*22 : 2;
+                        return (
+                          <div key={h} title={`${h}:00 — ${c} sit${c===1?"":"s"}`} style={{
+                            flex:1,display:"flex",justifyContent:"center",alignItems:"flex-end",height:"100%"
+                          }}>
+                            <div style={{
+                              width:size,height:size,borderRadius:"50%",
+                              background: c ? orb.color : "rgba(255,255,255,0.08)",
+                              opacity: c ? 0.5 + (c/maxHour)*0.5 : 1,
+                            }}/>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:"#4A3A6A",marginTop:6,letterSpacing:1}}>
+                      <span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span>
+                    </div>
+                  </div>
+
+                  {/* Archon roster */}
+                  <div style={sectionLabel}>Archon Roster</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    {archonList.map(a => (
+                      <div key={a.id} style={{
+                        display:"flex",alignItems:"center",gap:10,
+                        background: a.vanquished ? "rgba(255,215,140,0.06)" : `${a.glow}0E`,
+                        border:`1px solid ${a.vanquished ? "rgba(255,215,140,0.3)" : a.color+"40"}`,
+                        borderRadius:12,padding:"8px 12px",
+                        opacity: a.vanquished ? 0.85 : 1,
+                      }}>
+                        <div style={{transform:"scale(0.5)",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{a.render()}</div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:11,letterSpacing:2,color:a.vanquished ? "#FFD68C" : a.color,textTransform:"uppercase"}}>{a.name}</div>
+                          <div style={{fontSize:9,color:"#6A5A8A",fontStyle:"italic",marginTop:1}}>
+                            {a.vanquished
+                              ? "vanquished — silent 20+ sits"
+                              : a.lastSeenAgo === null
+                                ? "not yet met"
+                                : a.lastSeenAgo === 0 ? "last sit" : `${a.lastSeenAgo} sit${a.lastSeenAgo===1?"":"s"} ago`}
+                          </div>
+                        </div>
+                        <div style={{fontSize:14,color: a.vanquished ? "#FFD68C" : a.color,fontVariantNumeric:"tabular-nums"}}>
+                          {a.vanquished ? "✦" : `×${a.count}`}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Climate */}
+                  {(rising.length > 0 || fading.length > 0) && (
+                    <>
+                      <div style={sectionLabel}>Climate · Last 14 Days</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,fontSize:11}}>
+                        <div>
+                          <div style={{fontSize:9,letterSpacing:2,color:"#88DDAA",textTransform:"uppercase",marginBottom:6}}>Rising</div>
+                          {rising.length === 0 ? (
+                            <div style={{fontSize:10,color:"#4A3A6A",fontStyle:"italic"}}>—</div>
+                          ) : rising.map(c => (
+                            <div key={c.archon.id} style={{fontSize:11,color:c.archon.color,marginBottom:4}}>
+                              {c.archon.name} <span style={{color:"#88DDAA"}}>▲{c.delta}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div>
+                          <div style={{fontSize:9,letterSpacing:2,color:"#FF9988",textTransform:"uppercase",marginBottom:6}}>Fading</div>
+                          {fading.length === 0 ? (
+                            <div style={{fontSize:10,color:"#4A3A6A",fontStyle:"italic"}}>—</div>
+                          ) : fading.map(c => (
+                            <div key={c.archon.id} style={{fontSize:11,color:c.archon.color,marginBottom:4}}>
+                              {c.archon.name} <span style={{color:"#FF9988"}}>▼{Math.abs(c.delta)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Data tools */}
+              <div style={sectionLabel}>Data</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <button onClick={resetArchonCounts} style={{
+                  padding:"10px 14px",background:"transparent",
+                  border:"1px solid rgba(255,150,150,0.25)",borderRadius:10,
+                  color:"#C88888",fontSize:10,letterSpacing:2,cursor:"pointer",
+                  fontFamily:"inherit",textTransform:"uppercase"
+                }}>Reset Archon Counts</button>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={exportData} style={navBtn("#88CCFF22","#88CCFF")}>Export Data</button>
+                  <button onClick={()=>importFileRef.current && importFileRef.current.click()} style={navBtn("#AA88FF22","#AA88FF")}>Import Data</button>
+                </div>
+                <input ref={importFileRef} type="file" accept="application/json,.json" onChange={importDataFile} style={{display:"none"}}/>
+              </div>
+            </div>
+          );
+        })()}
+
       </div>
 
       {/* Nav dots */}
       {screen==="home" && (
         <div style={{position:"fixed",bottom:20,left:0,right:0,display:"flex",justifyContent:"center",gap:8,zIndex:10}}>
-          {["home","archons","journal"].map(s=>(
+          {["home","journey","archons","journal"].map(s=>(
             <button key={s} onClick={()=>setScreen(s)} style={{
               width:8,height:8,borderRadius:"50%",border:"none",cursor:"pointer",padding:0,
               background: screen===s ? orb.color : "rgba(255,255,255,0.2)"
