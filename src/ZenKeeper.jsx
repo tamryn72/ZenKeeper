@@ -883,9 +883,67 @@ function ceremonyTone() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// COSMIC WEB — deterministic node/filament graph used on the Wisdom page and
+// the standalone web screen reached by tapping the home orb.
+// ──────────────────────────────────────────────────────────────────────────────
+const WEB_NODES = (() => {
+  let s = 9173;
+  const r = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+  const out = [];
+  for (let i = 0; i < 34; i++) {
+    out.push({
+      x: 4 + r() * 92,
+      y: 4 + r() * 92,
+      radius: 0.5 + r() * 1.3,
+      delay: r() * 4,
+      dur: 3 + r() * 3,
+    });
+  }
+  return out;
+})();
+const WEB_FILAMENTS = (() => {
+  const out = [];
+  for (let i = 0; i < WEB_NODES.length; i++) {
+    for (let j = i + 1; j < WEB_NODES.length; j++) {
+      const dx = WEB_NODES[i].x - WEB_NODES[j].x;
+      const dy = WEB_NODES[i].y - WEB_NODES[j].y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < 22) out.push({ a: i, b: j, d });
+    }
+  }
+  return out;
+})();
+
+function CosmicWeb({ color, glow, style, strokeOpacity = 1 }) {
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" style={style}>
+      {WEB_FILAMENTS.map((f, i) => {
+        const o = Math.max(0.05, 0.28 - f.d * 0.008) * strokeOpacity;
+        return (
+          <line key={i}
+            x1={WEB_NODES[f.a].x} y1={WEB_NODES[f.a].y}
+            x2={WEB_NODES[f.b].x} y2={WEB_NODES[f.b].y}
+            stroke={color} strokeWidth={0.08} opacity={o}
+            style={{filter:`drop-shadow(0 0 1px ${glow})`}}
+          />
+        );
+      })}
+      {WEB_NODES.map((n, i) => (
+        <circle key={i} cx={n.x} cy={n.y} r={n.radius} fill={color}
+          style={{
+            animation: `webPulse ${n.dur}s ease-in-out ${n.delay}s infinite`,
+            filter: `drop-shadow(0 0 1.5px ${glow})`,
+          }}
+        />
+      ))}
+    </svg>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 export default function ZenKeeper() {
   const [store, setStore] = useState(() => loadState());
-  const [screen, setScreen] = useState("home"); // home | setup | prompt | sit | post | ceremony | archons | journal | journey | addDownload
+  const [screen, setScreen] = useState("home"); // home | setup | prompt | sit | post | ceremony | archons | journal | journey | wisdom | web | addDownload
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [sitDuration, setSitDuration] = useState(0);
@@ -941,6 +999,45 @@ export default function ZenKeeper() {
   function resetArchonCounts() {
     if (!confirm("Reset all archon counts to zero? (Session history is kept.)")) return;
     persist({ ...store, archonCounts: {} });
+  }
+
+  // ── Browser history / back button — every screen change pushes a history
+  //    entry so the hardware / browser back button navigates within the app
+  //    instead of exiting. Mid-sit back asks to confirm before ending.
+  const popstateGuard = useRef(false);
+  useEffect(() => {
+    if (!window.history.state || !window.history.state.screen) {
+      window.history.replaceState({ screen: "home" }, "");
+    }
+  }, []);
+  useEffect(() => {
+    const onPop = (e) => {
+      const target = (e.state && e.state.screen) || "home";
+      if (screen === "sit" && timerActive && target !== "sit") {
+        if (!confirm("End sit early? You'll lose your timer.")) {
+          popstateGuard.current = true;
+          window.history.pushState({ screen: "sit" }, "");
+          return;
+        }
+        endSit(true);
+      }
+      popstateGuard.current = true;
+      setScreen(target);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [screen, timerActive]);
+  useEffect(() => {
+    if (popstateGuard.current) { popstateGuard.current = false; return; }
+    if (window.history.state && window.history.state.screen === screen) return;
+    window.history.pushState({ screen }, "");
+  }, [screen]);
+  function goBack() {
+    if (window.history.state && window.history.state.screen && window.history.state.screen !== "home") {
+      window.history.back();
+    } else {
+      setScreen("home");
+    }
   }
 
   // ── Timer — pauseMode halts countdown so mid-sit tagging/insight capture
@@ -1201,7 +1298,29 @@ export default function ZenKeeper() {
 
         {/* ── HOME ──────────────────────────────────────────────────── */}
         {screen==="home" && (
-          <div style={{padding:"32px 24px"}}>
+          <div style={{padding:"32px 24px",position:"relative"}}>
+            {/* Sophia's Wisdom — tiny diamond, top-right corner */}
+            <button
+              onClick={()=>setScreen("wisdom")}
+              aria-label="Sophia's Wisdom"
+              title="Sophia's Wisdom"
+              style={{
+                position:"absolute",top:16,right:16,
+                width:26,height:26,padding:0,
+                background:"transparent",border:"none",cursor:"pointer",
+                display:"flex",alignItems:"center",justifyContent:"center",
+                zIndex:3,
+              }}
+            >
+              <div style={{
+                width:12,height:12,
+                transform:"rotate(45deg)",
+                border:`1px solid ${orb.color}88`,
+                background:`${orb.glow}26`,
+                boxShadow:`0 0 10px ${orb.glow}55`,
+              }}/>
+            </button>
+
             {/* Title */}
             <div style={{textAlign:"center",marginBottom:8}}>
               <div style={{fontSize:10,letterSpacing:6,color:"#5A4A7A",textTransform:"uppercase"}}>Sophia's Light</div>
@@ -1209,12 +1328,16 @@ export default function ZenKeeper() {
               <div style={{fontSize:11,color:"#5A4A7A",fontStyle:"italic"}}>{orb.name}</div>
             </div>
 
-            {/* ORB */}
+            {/* ORB — tap to see the cosmic web */}
             <div style={{display:"flex",justifyContent:"center",margin:"28px 0 20px"}}>
-              <div style={{position:"relative",width:orb.size+40,height:orb.size+40,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <div
+                onClick={()=>setScreen("web")}
+                title="See the web"
+                style={{position:"relative",width:orb.size+40,height:orb.size+40,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}
+              >
                 {/* outer glow rings */}
                 {[1.8,1.4,1.1].map((r,i)=>(
-                  <div key={i} style={{position:"absolute",width:orb.size*r,height:orb.size*r,borderRadius:"50%",background:`radial-gradient(circle,${orb.glow}${[18,28,40][i]} 0%,transparent 70%)`,animation:`orbPulse ${3+i}s ease-in-out infinite`}}/>
+                  <div key={i} style={{position:"absolute",width:orb.size*r,height:orb.size*r,borderRadius:"50%",background:`radial-gradient(circle,${orb.glow}${[18,28,40][i]} 0%,transparent 70%)`,animation:`orbPulse ${3+i}s ease-in-out infinite`,pointerEvents:"none"}}/>
                 ))}
                 <div style={{
                   width:orb.size, height:orb.size, borderRadius:"50%",
@@ -1222,7 +1345,8 @@ export default function ZenKeeper() {
                   boxShadow:`0 0 ${orb.size*0.6}px ${orb.glow}88, 0 0 ${orb.size*0.25}px ${orb.color}`,
                   transform: orbPulse?"scale(1.18)":"scale(1)",
                   transition:"transform 0.3s ease",
-                  animation:"orbFloat 4s ease-in-out infinite"
+                  animation:"orbFloat 4s ease-in-out infinite",
+                  pointerEvents:"none",
                 }}/>
               </div>
             </div>
@@ -1315,7 +1439,7 @@ export default function ZenKeeper() {
               boxShadow:`0 0 24px ${orb.glow}55`,marginBottom:14
             }}>Start</button>
 
-            <button onClick={()=>setScreen("home")} style={{
+            <button onClick={goBack} style={{
               padding:"10px 20px",background:"none",border:"none",color:"#7A6A9A",
               fontSize:11,letterSpacing:3,cursor:"pointer",fontFamily:"inherit",textTransform:"uppercase"
             }}>← Back</button>
@@ -1544,7 +1668,7 @@ export default function ZenKeeper() {
         {screen==="archons" && (
           <div style={{padding:"32px 20px"}}>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
-              <button onClick={()=>setScreen("home")} style={{background:"none",border:"none",color:"#7A6A9A",fontSize:20,cursor:"pointer",padding:0}}>←</button>
+              <button onClick={goBack} style={{background:"none",border:"none",color:"#7A6A9A",fontSize:20,cursor:"pointer",padding:0}}>←</button>
               <div>
                 <div style={{fontSize:10,letterSpacing:4,color:"#5A4A7A",textTransform:"uppercase"}}>Bestiary</div>
                 <div style={{fontSize:20,fontWeight:"normal",color:"#E8D8FF",letterSpacing:1}}>The Twelve Archons</div>
@@ -1577,7 +1701,7 @@ export default function ZenKeeper() {
         {screen==="journal" && (
           <div style={{padding:"32px 20px"}}>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
-              <button onClick={()=>setScreen("home")} style={{background:"none",border:"none",color:"#7A6A9A",fontSize:20,cursor:"pointer",padding:0}}>←</button>
+              <button onClick={goBack} style={{background:"none",border:"none",color:"#7A6A9A",fontSize:20,cursor:"pointer",padding:0}}>←</button>
               <div>
                 <div style={{fontSize:10,letterSpacing:4,color:"#5A4A7A",textTransform:"uppercase"}}>Recovered</div>
                 <div style={{fontSize:20,fontWeight:"normal",color:"#E8D8FF",letterSpacing:1}}>Sophia Fragments</div>
@@ -1722,7 +1846,7 @@ export default function ZenKeeper() {
           return (
             <div style={{padding:"28px 20px 60px"}}>
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-                <button onClick={()=>setScreen("home")} style={{background:"none",border:"none",color:"#7A6A9A",fontSize:20,cursor:"pointer",padding:0}}>←</button>
+                <button onClick={goBack} style={{background:"none",border:"none",color:"#7A6A9A",fontSize:20,cursor:"pointer",padding:0}}>←</button>
                 <div>
                   <div style={{fontSize:10,letterSpacing:4,color:"#5A4A7A",textTransform:"uppercase"}}>Your Path</div>
                   <div style={{fontSize:20,fontWeight:"normal",color:"#E8D8FF",letterSpacing:1}}>Journey</div>
@@ -1891,6 +2015,78 @@ export default function ZenKeeper() {
           );
         })()}
 
+        {/* ── WISDOM (Sophia's story) ────────────────────────────────── */}
+        {screen==="wisdom" && (
+          <div style={{padding:"28px 22px 60px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+              <button onClick={goBack} style={{background:"none",border:"none",color:"#7A6A9A",fontSize:20,cursor:"pointer",padding:0}}>←</button>
+              <div>
+                <div style={{fontSize:10,letterSpacing:4,color:"#5A4A7A",textTransform:"uppercase"}}>The Teaching</div>
+                <div style={{fontSize:20,fontWeight:"normal",color:"#E8D8FF",letterSpacing:1}}>Sophia's Wisdom</div>
+              </div>
+            </div>
+
+            <div style={{fontSize:14,color:"#C8B8E8",lineHeight:1.75,fontStyle:"italic"}}>
+              <h3 style={{fontSize:12,letterSpacing:3,color:orb.color,textTransform:"uppercase",margin:"18px 0 10px",fontWeight:"normal",fontStyle:"normal"}}>Sophia</h3>
+              <p style={{margin:"0 0 14px"}}>
+                Sophia is the mother of wisdom. A long time ago, everything was one light — peaceful and still. She chose to introduce something new: <em>duality</em>. Opposites. Self and other.
+              </p>
+              <p style={{margin:"0 0 14px"}}>
+                This was not a mistake. Without two, there is no meeting. Without difference, there is no growth. She made evolution possible.
+              </p>
+              <p style={{margin:"0 0 22px"}}>
+                But when light becomes two, some of it scatters. Some gets tangled in patterns. Those patterns are called archons.
+              </p>
+
+              <h3 style={{fontSize:12,letterSpacing:3,color:orb.color,textTransform:"uppercase",margin:"18px 0 10px",fontWeight:"normal",fontStyle:"normal"}}>The Archons</h3>
+              <p style={{margin:"0 0 14px"}}>
+                The archons are not demons. They are old patterns of mind — fear, craving, ego, planning, longing. They form when awareness gets caught in separation.
+              </p>
+              <p style={{margin:"0 0 14px"}}>
+                They are not evil. They are not even conscious. They simply do what they were made to do: pull attention to themselves and keep it spinning.
+              </p>
+              <p style={{margin:"0 0 22px"}}>
+                When you notice one, it loses a little of its power. Not because you fought it. Because you saw it clearly. Awareness is all it takes.
+              </p>
+
+              <h3 style={{fontSize:12,letterSpacing:3,color:orb.color,textTransform:"uppercase",margin:"18px 0 10px",fontWeight:"normal",fontStyle:"normal"}}>Your Practice</h3>
+              <p style={{margin:"0 0 14px"}}>
+                When you sit, you become a node in the cosmic web. Every thought you notice — every archon you catch and release — returns a small piece of Sophia's scattered light.
+              </p>
+              <p style={{margin:"0 0 14px"}}>
+                Your orb grows. The web brightens. Somewhere — in a place beyond measure — wholeness is being quietly restored.
+              </p>
+              <p style={{margin:"0 0 22px"}}>
+                You are not meditating alone. You are remembering her together.
+              </p>
+            </div>
+
+            {/* Cosmic web art at the bottom */}
+            <div style={{marginTop:24,position:"relative",height:180,borderRadius:14,overflow:"hidden",background:"radial-gradient(ellipse at center,rgba(180,140,255,0.06) 0%,rgba(10,8,26,0.2) 70%)",border:"1px solid rgba(180,140,255,0.1)"}}>
+              <CosmicWeb color={orb.color} glow={orb.glow} style={{position:"absolute",inset:0,width:"100%",height:"100%"}}/>
+              <div style={{position:"absolute",bottom:10,left:0,right:0,textAlign:"center",fontSize:9,letterSpacing:3,color:"#6A5A8A",textTransform:"uppercase",pointerEvents:"none"}}>The Web</div>
+            </div>
+          </div>
+        )}
+
+        {/* ── WEB (fullscreen cosmic web — orb tap from home) ────────── */}
+        {screen==="web" && (
+          <div onClick={goBack} style={{
+            position:"fixed",inset:0,
+            background:"radial-gradient(ellipse at center,rgba(180,140,255,0.07) 0%,rgba(10,8,26,0.0) 70%)",
+            cursor:"pointer",zIndex:2,
+            display:"flex",alignItems:"center",justifyContent:"center",
+            animation:"promptFadeIn 1.2s ease",
+          }}>
+            <CosmicWeb color={orb.color} glow={orb.glow} style={{position:"absolute",inset:0,width:"100%",height:"100%"}}/>
+            <div style={{position:"absolute",top:"6%",left:0,right:0,textAlign:"center",pointerEvents:"none"}}>
+              <div style={{fontSize:10,letterSpacing:5,color:"#6A5A8A",textTransform:"uppercase"}}>Her Light, Scattered</div>
+              <div style={{fontSize:13,color:"#9B8FC0",fontStyle:"italic",marginTop:6}}>Every noticing returns a fragment.</div>
+            </div>
+            <div style={{position:"absolute",bottom:"7%",left:0,right:0,textAlign:"center",fontSize:9,letterSpacing:3,color:"#5A4A7A",textTransform:"uppercase",pointerEvents:"none"}}>Tap to return</div>
+          </div>
+        )}
+
       </div>
 
       {/* Nav dots */}
@@ -1950,6 +2146,11 @@ export default function ZenKeeper() {
         @keyframes promptFadeIn {
           0%   { opacity: 0; }
           100% { opacity: 1; }
+        }
+        @keyframes webPulse {
+          0%   { opacity: 0.25; }
+          50%  { opacity: 1; }
+          100% { opacity: 0.25; }
         }
         /* shoot: streak is visible only for ~3s of each 2min cycle so the sky
            looks calm most of the time and a shooter arrives now and then. */
