@@ -883,6 +883,7 @@ export default function ZenKeeper() {
   const [caughtArchons, setCaughtArchons] = useState([]);
   const [sitInsights, setSitInsights] = useState([]);
   const [pauseMode, setPauseMode] = useState(null); // null | "archon" | "insight"
+  const [openingPrompt, setOpeningPrompt] = useState(false);
   const [insightDraft, setInsightDraft] = useState("");
   const [downloadText, setDownloadText] = useState("");
   const [orbPulse, setOrbPulse] = useState(false);
@@ -963,6 +964,8 @@ export default function ZenKeeper() {
     setTimerActive(true);
     setScreen("sit");
     startAmbienceIfNeeded();
+    setOpeningPrompt(true);
+    setTimeout(() => setOpeningPrompt(false), 9000);
   }
 
   function tagArchon(archon) {
@@ -1052,6 +1055,7 @@ export default function ZenKeeper() {
     setPauseMode(null);
     setInsightDraft("");
     setSitLight(0);
+    setOpeningPrompt(false);
   }
 
   function updateSettings(patch) {
@@ -1283,7 +1287,22 @@ export default function ZenKeeper() {
 
         {/* ── SIT ───────────────────────────────────────────────────── */}
         {screen==="sit" && (
-          <div style={{padding:"40px 24px",textAlign:"center",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+          <div style={{padding:"40px 24px",textAlign:"center",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",position:"relative"}}>
+            <div style={{
+              position:"fixed",top:32,left:0,right:0,
+              padding:"0 28px",pointerEvents:"none",zIndex:5,
+              opacity: openingPrompt ? 1 : 0,
+              transition: openingPrompt ? "opacity 1.4s ease" : "opacity 1.8s ease",
+            }}>
+              <div style={{maxWidth:380,margin:"0 auto",fontSize:15,color:"#E8D8FF",fontStyle:"italic",lineHeight:1.7,textShadow:`0 0 20px ${orb.glow}66`}}>
+                Wait and watch: what is your next thought?
+              </div>
+              <div style={{height:14}}/>
+              <div style={{maxWidth:380,margin:"0 auto",fontSize:13,color:"#C8B8E8",fontStyle:"italic",lineHeight:1.7,textShadow:`0 0 16px ${orb.glow}44`}}>
+                If it successfully pulls you in, mark it as an archon. If you notice it and release it, continue — that's success.
+              </div>
+            </div>
+
             <div style={{fontSize:10,letterSpacing:4,color:pauseMode ? "#8A7AA8" : "#3A2A5A",textTransform:"uppercase",marginBottom:24,height:14}}>
               {pauseMode ? "Timer paused" : `Sitting · ${formatSeconds(sitDuration)}`}
             </div>
